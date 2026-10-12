@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jev: The Decision Model — Tutorial</title>
+    <script>
+      // Set theme before first paint to avoid a flash.
+      try {
+        var t = localStorage.getItem("theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        /* Solarized Light */
+        --bg: #fdf6e3;
+        --panel: #eee8d5;
+        --panel-2: #f7f0dd;
+        --ink: #586e75;
+        --heading: #002b36;
+        --muted: #93a1a1;
+        --line: #d9d2bd;
+        --accent: #268bd2;
+        --green: #859900;
+        --yellow: #b58900;
+        --orange: #cb4b16;
+        --red: #dc322f;
+        --violet: #6c71c4;
+        --cyan: #2aa198;
+        --code-bg: #eee8d5;
+        --code-ink: #586e75;
+        --mark-bg: #f3e6a6;
+        --tok-comment: #93a1a1;
+        --tok-punct: #586e75;
+        --tok-const: #b58900;
+        --tok-number: #d33682;
+        --tok-string: #2aa198;
+        --tok-op: #657b83;
+        --tok-keyword: #859900;
+        --tok-function: #268bd2;
+        --tok-var: #cb4b16;
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        /* Solarized Dark */
+        --bg: #002b36;
+        --panel: #073642;
+        --panel-2: #06303a;
+        --ink: #839496;
+        --heading: #eee8d5;
+        --muted: #586e75;
+        --line: #0f4451;
+        --accent: #268bd2;
+        --green: #859900;
+        --yellow: #b58900;
+        --orange: #cb4b16;
+        --red: #dc322f;
+        --violet: #6c71c4;
+        --cyan: #2aa198;
+        --code-bg: #073642;
+        --code-ink: #93a1a1;
+        --mark-bg: #4a4210;
+        --tok-comment: #586e75;
+        --tok-punct: #839496;
+        --tok-const: #b58900;
+        --tok-number: #d33682;
+        --tok-string: #2aa198;
+        --tok-op: #93a1a1;
+        --tok-keyword: #859900;
+        --tok-function: #268bd2;
+        --tok-var: #cb4b16;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          color-scheme: dark;
+          --bg: #002b36;
+          --panel: #073642;
+          --panel-2: #06303a;
+          --ink: #839496;
+          --heading: #eee8d5;
+          --muted: #586e75;
+          --line: #0f4451;
+          --accent: #268bd2;
+          --code-bg: #073642;
+          --code-ink: #93a1a1;
+          --mark-bg: #4a4210;
+          --tok-comment: #586e75;
+          --tok-punct: #839496;
+          --tok-const: #b58900;
+          --tok-number: #d33682;
+          --tok-string: #2aa198;
+          --tok-op: #93a1a1;
+          --tok-keyword: #859900;
+          --tok-function: #268bd2;
+          --tok-var: #cb4b16;
+        }
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      .wrap {
+        display: grid;
+        grid-template-columns: 250px minmax(0, 1fr);
+        gap: 40px;
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 40px 24px 96px;
+      }
+      .sidebar {
+        position: sticky;
+        top: 24px;
+        align-self: start;
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+      }
+      .sidebar .brand {
+        font-weight: 700;
+        color: var(--heading);
+        margin: 0 0 4px;
+        font-size: 15px;
+      }
+      #theme-toggle {
+        width: 100%;
+        margin: 10px 0 16px;
+        padding: 8px 10px;
+        font: inherit;
+        font-size: 13px;
+        color: var(--heading);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      #theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+      .sidebar nav ol {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        counter-reset: toc;
+      }
+      .sidebar nav a {
+        display: block;
+        padding: 5px 0 5px 26px;
+        position: relative;
+        color: var(--ink);
+        text-decoration: none;
+        font-size: 13.5px;
+        border-left: 2px solid transparent;
+      }
+      .sidebar nav a::before {
+        counter-increment: toc;
+        content: counter(toc);
+        position: absolute;
+        left: 0;
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .sidebar nav a:hover { color: var(--accent); border-left-color: var(--accent); }
+
+      main { max-width: 760px; }
+      header h1 {
+        font-size: 32px;
+        line-height: 1.15;
+        margin: 0 0 8px;
+        color: var(--heading);
+      }
+      .lede { font-size: 17px; color: var(--ink); margin: 0 0 6px; }
+      section { margin-top: 44px; }
+      h2 {
+        font-size: 23px;
+        margin: 0 0 4px;
+        color: var(--heading);
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+      h3 { font-size: 16px; margin: 24px 0 8px; color: var(--heading); }
+      p { margin: 12px 0; }
+      a { color: var(--accent); }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.86em;
+        background: var(--panel);
+        padding: 1px 5px;
+        border-radius: 5px;
+      }
+      ul, ol { padding-left: 22px; }
+      li { margin: 6px 0; }
+
+      .why { color: var(--muted); font-style: italic; margin: 6px 0 14px; }
+
+      pre {
+        position: relative;
+        background: var(--code-bg);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 16px 16px;
+        overflow-x: auto;
+        margin: 16px 0;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+        font-size: 13px;
+        color: var(--code-ink);
+        white-space: pre;
+      }
+      mark {
+        background: var(--mark-bg);
+        color: inherit;
+        border-radius: 3px;
+        padding: 1px 0;
+      }
+      .copy-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        font: inherit;
+        font-size: 11.5px;
+        padding: 4px 9px;
+        color: var(--heading);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        cursor: pointer;
+        opacity: 0.85;
+      }
+      .copy-btn:hover { border-color: var(--accent); color: var(--accent); opacity: 1; }
+
+      .snip-label {
+        display: block;
+        margin: 22px 0 -8px;
+        font-size: 12px;
+        color: var(--muted);
+        font-family: ui-monospace, monospace;
+      }
+
+      figure { margin: 20px 0; }
+      figure svg { max-width: 100%; height: auto; display: block; }
+      figcaption {
+        margin-top: 8px;
+        font-size: 13px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0;
+        font-size: 14px;
+      }
+      th, td {
+        text-align: left;
+        padding: 9px 10px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th { color: var(--heading); font-weight: 600; }
+
+      .callout {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin: 18px 0;
+        font-size: 14.5px;
+      }
+      .callout.warn { border-left-color: var(--orange); }
+      .callout.note { border-left-color: var(--green); }
+      .callout b { color: var(--heading); }
+
+      .badge {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 1px 8px;
+        border-radius: 20px;
+        background: var(--panel);
+      }
+      .badge.noul { color: var(--green); }
+      .badge.choice { color: var(--accent); }
+      .badge.score { color: var(--violet); }
+
+      /* Prism token colors follow the theme variables. */
+      pre[class*="language-"] {
+        color: var(--code-ink);
+        tab-size: 4;
+      }
+      .token.comment, .token.prolog, .token.doctype, .token.cdata { color: var(--tok-comment); font-style: italic; }
+      .token.punctuation { color: var(--tok-punct); }
+      .token.property, .token.tag, .token.constant, .token.symbol, .token.deleted { color: var(--tok-const); }
+      .token.boolean, .token.number { color: var(--tok-number); }
+      .token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted { color: var(--tok-string); }
+      .token.operator, .token.entity, .token.url { color: var(--tok-op); }
+      .token.atrule, .token.attr-value, .token.keyword { color: var(--tok-keyword); }
+      .token.function, .token.class-name { color: var(--tok-function); }
+      .token.regex, .token.important, .token.variable { color: var(--tok-var); }
+
+      @media (max-width: 860px) {
+        .wrap { grid-template-columns: 1fr; gap: 16px; padding-top: 20px; }
+        .sidebar { position: static; max-height: none; }
+        .sidebar nav ol { columns: 2; }
+      }
+
+      @media print {
+        :root, :root[data-theme="dark"] {
+          --bg: #ffffff;
+          --panel: #f4f4f4;
+          --panel-2: #ffffff;
+          --ink: #1a1a1a;
+          --heading: #000000;
+          --muted: #555555;
+          --line: #cccccc;
+          --accent: #0645ad;
+          --code-bg: #f6f6f6;
+          --code-ink: #1a1a1a;
+          --mark-bg: #ffe9a8;
+        }
+        .sidebar, .copy-btn { display: none !important; }
+        .wrap { display: block; max-width: none; padding: 0; }
+        main { max-width: none; }
+        pre, figure, table, .callout, mark { break-inside: avoid; }
+        h1, h2, h3 { break-after: avoid; }
+        a { color: #0645ad; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <aside class="sidebar">
+        <p class="brand">Jev — The Decision Model</p>
+        <button id="theme-toggle" type="button">Dark mode</button>
+        <nav aria-label="Table of contents">
+          <ol>
+            <li><a href="#how-to-use">How to Use</a></li>
+            <li><a href="#what-you-learn">What You'll Learn</a></li>
+            <li><a href="#example">The Example</a></li>
+            <li><a href="#decision-model">A Decision Model, Not an LLM</a></li>
+            <li><a href="#state">State: What Gets Evaluated</a></li>
+            <li><a href="#one-request">One Request, Many Questions</a></li>
+            <li><a href="#primitives">The Three Primitives</a></li>
+            <li><a href="#answers">Answers Are Typed Numbers</a></li>
+            <li><a href="#code-decides">Code Decides</a></li>
+            <li><a href="#uncertainty">Route on Uncertainty</a></li>
+            <li><a href="#decompose">Decompose the Judgment</a></li>
+            <li><a href="#pitfalls">Common Pitfalls</a></li>
+            <li><a href="#takeaways">Key Takeaways</a></li>
+          </ol>
+        </nav>
+      </aside>
+
+      <main>
+        <header>
+          <h1>Jev: The Decision Model</h1>
+          <p class="lede">Jev is a System One model: you send it <em>state</em> plus typed questions, and it returns <em>numbers</em> — never prose. Your code turns those numbers into the decision.</p>
+        </header>
+
+        <section id="how-to-use">
+          <h2>How to Use</h2>
+          <p>Create a project, add the SDK, and run the single-file example:</p>
+          <pre><code class="language-bash">uv init
+uv add typesafe-sdk httpx2
+uv run main.py</code></pre>
+          <p>The example runs offline by default: if <code>TYPESAFE_API_KEY</code> is not set, the client replays a recorded <code>jev-1.13.0</code> answer so you can read every part of the flow immediately. Export a real key to hit the live model instead:</p>
+          <pre><code class="language-bash">export TYPESAFE_API_KEY=your-key
+uv run main.py</code></pre>
+          <p>Expected output (the values are probabilities, so a live run will differ slightly):</p>
+          <pre><code class="language-bash">model                        : jev-1.13.0
+duplicate_charge  (noul)     : 0.97
+request_type      (choice)   : refund (confidence 0.88)
+frustration       (score)    : 1.60
+decision                     : auto_refund</code></pre>
+        </section>
+
+        <section id="what-you-learn">
+          <h2>What You'll Learn</h2>
+          <ul>
+            <li>What a System One <em>decision model</em> is, and how it differs from an LLM.</li>
+            <li>How <em>state</em> carries the content Jev evaluates, separate from the questions.</li>
+            <li>How to ask many atomic questions in one parallel request.</li>
+            <li>The three primitives — <span class="badge noul">Noul</span> <span class="badge choice">Choice</span> <span class="badge score">Score</span> — and the answer shape of each.</li>
+            <li>How to read probabilities and confidence as actionable numbers.</li>
+            <li>How code turns typed answers into a routing decision with thresholds.</li>
+            <li>Why low-confidence answers should escalate to a human.</li>
+            <li>Why broad questions must be decomposed into atomic ones.</li>
+          </ul>
+        </section>
+
+        <section id="example">
+          <h2>The Example</h2>
+          <p>This is the complete program. Copy it into <code>main.py</code> after running the setup commands above. (To run it offline before adding a key, keep it exactly as written — <code>make_client</code> chooses the replay transport for you.)</p>
+          <pre><code class="language-python">"""A minimal Jev decision-model example.
+
+One request, three typed questions, and a decision made in ordinary code.
+Runs offline (replaying a recorded answer) unless TYPESAFE_API_KEY is set.
+"""
+
+import os
+
+import httpx2
+from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
+
+# 1. STATE  --  the content Jev evaluates. One structured object, not a prompt.
+STATE = {
+    "ticket": {
+        "subject": "Duplicate charge on order A-104",
+        "message": (
+            "I was charged twice for order A-104. This is the third time "
+            "I've written in. Please refund the duplicate."
+        ),
+    },
+    "order": {
+        "id": "A-104",
+        "charges": [
+            {"amount_usd": 49, "status": "captured"},
+            {"amount_usd": 49, "status": "captured"},
+        ],
+    },
+    "refund_policy": "Duplicate charges are eligible for a full refund.",
+}
+
+# 2. QUESTIONS  --  three primitives asked together in one request.
+#    The ids are for our code; only instructions/criteria reach the model.
+QUESTIONS = {
+    "duplicate_charge": Noul(
+        instructions="Do `order.charges` show the same amount captured more than once?",
+    ),
+    "request_type": Choice(
+        instructions="What is the main request in `ticket.message`?",
+        criteria={
+            "refund": "The customer wants money returned.",
+            "rebooking": "The customer wants the item reshipped.",
+            "information": "The customer is asking for information only.",
+        },
+    ),
+    "frustration": Score(
+        instructions="How frustrated does the customer appear in `ticket.message`?",
+        criteria=[
+            "Calm and neutral.",
+            "Concerned but civil.",
+            "Very angry or using strong language.",
+        ],
+    ),
+}
+
+# A recorded jev-1.13.0 answer for the state above, used when no API key is set.
+RECORDED = {
+    "model": "jev-1.13.0",
+    "answers": {
+        "duplicate_charge": {"type": "noul", "noul": 0.97},
+        "request_type": {
+            "type": "choice",
+            "choice": "refund",
+            "confidence": 0.88,
+            "probabilities": {"refund": 0.94, "rebooking": 0.02, "information": 0.04},
+        },
+        "frustration": {
+            "type": "score",
+            "score": 1.60,
+            "confidence": 0.62,
+            "legend": {
+                0: "Calm and neutral.",
+                1: "Concerned but civil.",
+                2: "Very angry or using strong language.",
+            },
+            "probabilities": {0: 0.0, 1: 0.40, 2: 0.60},
+        },
+    },
+    "usage": {"input_tokens": 412, "output_tokens": 41},
+}
+
+
+def make_client() -&gt; TypeSafeClient:
+    """Real client when TYPESAFE_API_KEY is set; offline replay otherwise."""
+    if os.environ.get("TYPESAFE_API_KEY"):
+        return TypeSafeClient(timeout=30.0)
+    replay = httpx2.MockTransport(lambda _request: httpx2.Response(200, json=RECORDED))
+    return TypeSafeClient(api_key="offline", transport=replay)
+
+
+# 3. DECIDE  --  code owns the policy. Thresholds are constants, not prompts.
+APPROVE_AT = 0.90  # noul: act only on a confident yes
+REVIEW_BELOW = 0.70  # confidence: below this, a person reviews
+
+
+def decide(response) -&gt; str:
+    answers = response.answers
+    duplicate = answers["duplicate_charge"].noul
+    request = answers["request_type"]
+
+    if request.confidence &lt; REVIEW_BELOW:
+        return "route_to_human: intent unclear"
+    if request.choice == "refund" and duplicate &gt;= APPROVE_AT:
+        return "auto_refund"
+    if duplicate &gt;= APPROVE_AT:
+        return f"route_to_{request.choice}"
+    return "route_to_human: policy not satisfied"
+
+
+def main() -&gt; None:
+    with make_client() as client:
+        response = client.system_one(state=STATE, questions=QUESTIONS)
+
+    answers = response.answers
+    print(f"model                        : {response.model}")
+    print(f'duplicate_charge  (noul)     : {answers["duplicate_charge"].noul:.2f}')
+    print(
+        f'request_type      (choice)   : {answers["request_type"].choice} '
+        f'(confidence {answers["request_type"].confidence:.2f})'
+    )
+    print(f'frustration       (score)    : {answers["frustration"].score:.2f}')
+    print(f"decision                     : {decide(response)}")
+
+
+if __name__ == "__main__":
+    main()</code></pre>
+        </section>
+
+        <section id="decision-model">
+          <h2>A Decision Model, Not an LLM</h2>
+          <p class="why">Why it matters: everything Jev does follows from the fact that its output is a number your program reads, not text a person reads.</p>
+          <p>An LLM generates the next token. To get a usable field out of it you prompt for JSON and then parse — and hope the shape holds. Jev is a <em>System One</em> model: it was trained to make one fast, calibrated judgment at a time and return it as a constrained value. It does not write answers, produce code, or explain itself.</p>
+
+          <figure>
+            <svg viewBox="0 0 720 150" role="img" aria-label="LLM path parses text; Jev path reads typed values directly">
+              <defs>
+                <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+                </marker>
+              </defs>
+              <g font-family="ui-monospace, monospace" font-size="12" fill="currentColor">
+                <!-- LLM row -->
+                <text x="0" y="18" font-size="11" fill="#93a1a1">LLM</text>
+                <rect x="54" y="4" width="120" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="1.2" />
+                <text x="114" y="23" text-anchor="middle">prompt</text>
+                <line x1="174" y1="19" x2="228" y2="19" stroke="currentColor" marker-end="url(#ah)" />
+                <rect x="230" y="4" width="130" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="1.2" />
+                <text x="295" y="23" text-anchor="middle">generated text</text>
+                <line x1="360" y1="19" x2="414" y2="19" stroke="currentColor" marker-end="url(#ah)" />
+                <rect x="416" y="4" width="150" height="30" rx="7" fill="none" stroke="#dc322f" stroke-width="1.2" stroke-dasharray="4 3" />
+                <text x="491" y="23" text-anchor="middle" fill="#dc322f">parse &amp; hope</text>
+                <line x1="566" y1="19" x2="620" y2="19" stroke="currentColor" marker-end="url(#ah)" />
+                <text x="632" y="23">your code</text>
+                <!-- Jev row -->
+                <text x="0" y="98" font-size="11" fill="#268bd2">JEV</text>
+                <rect x="54" y="84" width="120" height="30" rx="7" fill="none" stroke="#268bd2" stroke-width="1.2" />
+                <text x="114" y="103" text-anchor="middle" fill="#268bd2">state + questions</text>
+                <line x1="174" y1="99" x2="228" y2="99" stroke="#268bd2" marker-end="url(#ah)" />
+                <rect x="230" y="84" width="130" height="30" rx="7" fill="none" stroke="#268bd2" stroke-width="1.2" />
+                <text x="295" y="103" text-anchor="middle" fill="#268bd2">typed answers</text>
+                <line x1="360" y1="99" x2="620" y2="99" stroke="#268bd2" marker-end="url(#ah)" />
+                <text x="632" y="103" fill="#268bd2">your code</text>
+              </g>
+            </svg>
+            <figcaption>An LLM's output is text you must recover structure from. Jev's output is already the structured value.</figcaption>
+          </figure>
+
+          <table>
+            <thead><tr><th></th><th>LLM</th><th>Jev (System One)</th></tr></thead>
+            <tbody>
+              <tr><td>Output</td><td>Free-form text</td><td>Typed value + probabilities</td></tr>
+              <tr><td>You must</td><td>Parse the response</td><td>Read a field</td></tr>
+              <tr><td>Can it invent values?</td><td>Yes, outside your schema</td><td>No — confined to your options</td></tr>
+              <tr><td>Uncertainty</td><td>Usually hidden</td><td>Calibrated probability</td></tr>
+              <tr><td>Role in the system</td><td>Generates the answer</td><td>Makes one narrow judgment</td></tr>
+            </tbody>
+          </table>
+
+          <div class="callout note"><b>The name:</b> "System One" comes from Kahneman's <em>Thinking, Fast and Slow</em> — fast, intuitive judgments. Jev is TypeSafe's flagship System One model.</div>
+        </section>
+
+        <section id="state">
+          <h2>State: What Gets Evaluated</h2>
+          <p class="why">Why it matters: state is the <em>content</em>; questions are the judgments about it. Keeping them separate is what makes the request reusable.</p>
+          <p>State is whatever Jev looks at to answer your questions. It can be a string, but a structured object is usually better: each part gets a name, and questions can point at a specific part with a backticked path like <code>`order.charges`</code>.</p>
+
+          <span class="snip-label">main.py:13-29</span>
+          <pre><code class="language-python" data-mark="11-14,16">STATE = {
+    "ticket": {
+        "subject": "Duplicate charge on order A-104",
+        "message": (
+            "I was charged twice for order A-104. This is the third time "
+            "I've written in. Please refund the duplicate."
+        ),
+    },
+    "order": {
+        "id": "A-104",
+        "charges": [
+            {"amount_usd": 49, "status": "captured"},
+            {"amount_usd": 49, "status": "captured"},
+        ],
+    },
+    "refund_policy": "Duplicate charges are eligible for a full refund.",
+}</code></pre>
+
+          <ul>
+            <li><b>One state, many parts.</b> The ticket, the order, and the refund policy live together because the decision needs to compare them.</li>
+            <li><b>Facts, not instructions.</b> State contains the material to judge; the questions state what to judge about it.</li>
+            <li><b>Paths remove ambiguity.</b> <code>`order.charges`</code> tells Jev exactly which field to inspect instead of guessing from the whole blob.</li>
+          </ul>
+
+          <div class="callout warn"><b>Watch out:</b> Jev currently accepts text only (strings, JSON objects, arrays of text). No images, audio, or video. Its strongest language is English.</div>
+        </section>
+
+        <section id="one-request">
+          <h2>One Request, Many Questions</h2>
+          <p class="why">Why it matters: questions run in parallel and independently, so asking three costs barely more than asking one — and no answer contaminates another.</p>
+          <p>Every question that uses the same state goes into a single call:</p>
+
+          <span class="snip-label">main.py:110-111</span>
+          <pre><code class="language-python" data-mark="2">    with make_client() as client:
+        response = client.system_one(state=STATE, questions=QUESTIONS)</code></pre>
+
+          <figure>
+            <svg viewBox="0 0 700 200" role="img" aria-label="One request fans out to three parallel questions producing three answers">
+              <defs>
+                <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+                </marker>
+              </defs>
+              <g font-family="ui-monospace, monospace" font-size="12" fill="currentColor">
+                <rect x="10" y="80" width="130" height="40" rx="8" fill="none" stroke="#268bd2" stroke-width="1.4" />
+                <text x="75" y="105" text-anchor="middle" fill="#268bd2">state + questions</text>
+                <line x1="140" y1="100" x2="188" y2="100" stroke="#268bd2" marker-end="url(#ah2)" />
+                <rect x="190" y="60" width="150" height="80" rx="8" fill="none" stroke="#268bd2" stroke-width="1.4" />
+                <text x="265" y="92" text-anchor="middle" fill="#268bd2">Jev</text>
+                <text x="265" y="110" text-anchor="middle" font-size="10" fill="#93a1a1">evaluates each</text>
+                <text x="265" y="124" text-anchor="middle" font-size="10" fill="#93a1a1">in parallel</text>
+                <!-- three questions to answers -->
+                <g stroke="currentColor" stroke-width="1.1" fill="none">
+                  <path d="M340,70 C400,70 400,40 470,40" marker-end="url(#ah2)" />
+                  <path d="M340,100 C400,100 400,100 470,100" marker-end="url(#ah2)" />
+                  <path d="M340,130 C400,130 400,160 470,160" marker-end="url(#ah2)" />
+                </g>
+                <rect x="472" y="26" width="200" height="28" rx="7" fill="none" stroke="#859900" stroke-width="1.2" />
+                <text x="482" y="44" font-size="11" fill="#859900">duplicate_charge → noul</text>
+                <rect x="472" y="86" width="200" height="28" rx="7" fill="none" stroke="#268bd2" stroke-width="1.2" />
+                <text x="482" y="104" font-size="11" fill="#268bd2">request_type → choice</text>
+                <rect x="472" y="146" width="200" height="28" rx="7" fill="none" stroke="#6c71c4" stroke-width="1.2" />
+                <text x="482" y="164" font-size="11" fill="#6c71c4">frustration → score</text>
+              </g>
+            </svg>
+            <figcaption>One HTTP request; three independent judgments; three typed answers keyed by the ids you chose.</figcaption>
+          </figure>
+
+          <ul>
+            <li><b>Ids are for you.</b> <code>duplicate_charge</code>, <code>request_type</code>, <code>frustration</code> label the answers in your code. They are never sent to the model.</li>
+            <li><b>Parallel and isolated.</b> Adding a question does not lengthen the response or change the other answers.</li>
+            <li><b>Ask speculatively.</b> A question whose answer you might ignore for some inputs is nearly free — the code simply does not read it.</li>
+          </ul>
+        </section>
+
+        <section id="primitives">
+          <h2>The Three Primitives</h2>
+          <p class="why">Why it matters: match the question type to the shape of the answer your code can act on — a category, a spectrum, or a yes/no.</p>
+
+          <table>
+            <thead><tr><th>Primitive</th><th>Answers</th><th>Returns</th><th>Use when</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge noul">Noul</span></td><td>Is this true?</td><td><code>noul</code> (0–1)</td><td>A clean yes/no where the probability is the signal</td></tr>
+              <tr><td><span class="badge choice">Choice</span></td><td>Which of these?</td><td><code>choice</code>, <code>probabilities</code>, <code>confidence</code></td><td>Options with no order between them</td></tr>
+              <tr><td><span class="badge score">Score</span></td><td>Which level?</td><td><code>score</code>, <code>legend</code>, <code>probabilities</code>, <code>confidence</code></td><td>A spectrum you can describe in steps</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Noul — a probability that the answer is yes</h3>
+          <p>A Noul returns one number. Near 1 is a strong yes, near 0 a strong no, near 0.5 means yes and no are about equally likely. It is <em>not</em> a scale of degree.</p>
+          <span class="snip-label">main.py:34-36</span>
+          <pre><code class="language-python" data-mark="2">    "duplicate_charge": Noul(
+        instructions="Do `order.charges` show the same amount captured more than once?",
+    ),</code></pre>
+
+          <h3>Choice — one option from a fixed set</h3>
+          <p>Every option gets a description that separates it from its neighbours, and you get back a probability for each.</p>
+          <span class="snip-label">main.py:37-44</span>
+          <pre><code class="language-python" data-mark="4-6">    "request_type": Choice(
+        instructions="What is the main request in `ticket.message`?",
+        criteria={
+            "refund": "The customer wants money returned.",
+            "rebooking": "The customer wants the item reshipped.",
+            "information": "The customer is asking for information only.",
+        },
+    ),</code></pre>
+
+          <h3>Score — a position on an ordered rubric</h3>
+          <p>You supply ordered level descriptions; the answer is a position along them that can fall <em>between</em> two levels.</p>
+          <span class="snip-label">main.py:45-52</span>
+          <pre><code class="language-python" data-mark="2-6">    "frustration": Score(
+        instructions="How frustrated does the customer appear in `ticket.message`?",
+        criteria=[
+            "Calm and neutral.",
+            "Concerned but civil.",
+            "Very angry or using strong language.",
+        ],
+    ),</code></pre>
+
+          <div class="callout"><b>Design rule:</b> each question asks one well-scoped thing — "a judgment a knowledgeable person could make in a few seconds." If a question weighs several factors, split it (see <a href="#decompose">Decompose</a>).</div>
+        </section>
+
+        <section id="answers">
+          <h2>Answers Are Typed Numbers</h2>
+          <p class="why">Why it matters: probabilities and confidence are the raw material your policy is written on top of — not decoration.</p>
+          <p>The response is a dict of answer objects, each typed to its question. Read the fields directly:</p>
+
+          <span class="snip-label">main.py:113-120</span>
+          <pre><code class="language-python" data-mark="2-5">    answers = response.answers
+    print(f"model                        : {response.model}")
+    print(f'duplicate_charge  (noul)     : {answers["duplicate_charge"].noul:.2f}')
+    print(
+        f'request_type      (choice)   : {answers["request_type"].choice} '
+        f'(confidence {answers["request_type"].confidence:.2f})'
+    )
+    print(f'frustration       (score)    : {answers["frustration"].score:.2f}')</code></pre>
+
+          <figure>
+            <svg viewBox="0 0 700 210" role="img" aria-label="Left: choice probability bars for refund, rebooking, information. Right: score probabilities across three levels">
+              <g font-family="ui-monospace, monospace" font-size="11" fill="currentColor">
+                <text x="10" y="16" fill="#93a1a1">Choice · request_type</text>
+                <!-- refund -->
+                <text x="10" y="48" font-size="11">refund</text>
+                <rect x="90" y="38" width="220" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
+                <rect x="90" y="38" width="207" height="14" rx="4" fill="#268bd2" />
+                <text x="318" y="49" fill="#268bd2">0.94</text>
+                <!-- rebooking -->
+                <text x="10" y="78" font-size="11">rebooking</text>
+                <rect x="90" y="68" width="220" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
+                <rect x="90" y="68" width="5" height="14" rx="3" fill="#268bd2" />
+                <text x="318" y="79" opacity="0.75">0.02</text>
+                <!-- information -->
+                <text x="10" y="108" font-size="11">information</text>
+                <rect x="90" y="98" width="220" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
+                <rect x="90" y="98" width="9" height="14" rx="3" fill="#268bd2" />
+                <text x="318" y="109" opacity="0.75">0.04</text>
+                <text x="10" y="134" font-size="11" fill="#268bd2">confidence 0.88 (peaked)</text>
+
+                <!-- divide -->
+                <line x1="400" y1="24" x2="400" y2="196" stroke="currentColor" stroke-width="1" opacity="0.25" />
+
+                <text x="424" y="16" fill="#93a1a1">Score · frustration</text>
+                <text x="424" y="48" font-size="11">level 0 calm</text>
+                <rect x="560" y="38" width="110" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
+                <rect x="560" y="38" width="0.5" height="14" rx="3" fill="#6c71c4" />
+                <text x="678" y="49" opacity="0.75">0.00</text>
+                <text x="424" y="78" font-size="11">level 1 civil</text>
+                <rect x="560" y="68" width="110" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
+                <rect x="560" y="68" width="44" height="14" rx="4" fill="#6c71c4" />
+                <text x="678" y="79" opacity="0.85">0.40</text>
+                <text x="424" y="108" font-size="11">level 2 angry</text>
+                <rect x="560" y="98" width="110" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
+                <rect x="560" y="98" width="66" height="14" rx="4" fill="#6c71c4" />
+                <text x="678" y="109" opacity="0.85">0.60</text>
+                <text x="424" y="134" font-size="11" fill="#6c71c4">score 1.60 = 0.40×1 + 0.60×2</text>
+              </g>
+            </svg>
+            <figcaption>Choice spreads probability over labelled options; Score spreads it over ordered levels. The <em>shape</em> becomes confidence.</figcaption>
+          </figure>
+
+          <ul>
+            <li><b><code>choice</code> / <code>score</code> / <code>noul</code></b> — the selected value. For Score it is the probability-weighted mean, so it can be fractional.</li>
+            <li><b><code>probabilities</code></b> — the full distribution over your options or levels; it sums to 1.</li>
+            <li><b><code>confidence</code></b> — one number from the shape of that distribution: 1.0 when all probability sits on one outcome, lower the more it spreads. Noul has no separate confidence; its single probability already carries the uncertainty.</li>
+          </ul>
+
+          <div class="callout warn"><b>Two different distributions can share one number.</b> A score of 1.0 can mean all probability on level 1, or half on level 0 and half on level 2. Read <code>probabilities</code> and <code>confidence</code> alongside the value.</div>
+        </section>
+
+        <section id="code-decides">
+          <h2>Code Decides</h2>
+          <p class="why">Why it matters: the model supplies judgment; your program supplies policy. Keeping thresholds as ordinary constants makes them reviewable and tunable.</p>
+          <p>Jev never says "approve" or "route to billing". It answers questions. The decision — an ordered list of <code>if</code> rules — lives in your code:</p>
+
+          <span class="snip-label">main.py:90-106</span>
+          <pre><code class="language-python" data-mark="2-3,11-13"># 3. DECIDE  --  code owns the policy. Thresholds are constants, not prompts.
+APPROVE_AT = 0.90  # noul: act only on a confident yes
+REVIEW_BELOW = 0.70  # confidence: below this, a person reviews
+
+
+def decide(response) -&gt; str:
+    answers = response.answers
+    duplicate = answers["duplicate_charge"].noul
+    request = answers["request_type"]
+
+    if request.confidence &lt; REVIEW_BELOW:
+        return "route_to_human: intent unclear"
+    if request.choice == "refund" and duplicate &gt;= APPROVE_AT:
+        return "auto_refund"
+    if duplicate &gt;= APPROVE_AT:
+        return f"route_to_{request.choice}"
+    return "route_to_human: policy not satisfied"</code></pre>
+
+          <figure>
+            <svg viewBox="0 0 700 190" role="img" aria-label="Ordered decision rules mapping answers to outcomes">
+              <g font-family="ui-monospace, monospace" font-size="11.5" fill="currentColor">
+                <rect x="10" y="14" width="680" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.6" />
+                <text x="24" y="33">if request.confidence &lt; 0.70 →</text>
+                <text x="600" y="33" fill="#cb4b16">route to human</text>
+
+                <rect x="10" y="58" width="680" height="30" rx="7" fill="none" stroke="#859900" stroke-width="1.3" />
+                <text x="24" y="77" fill="#859900">else if choice == "refund" and duplicate ≥ 0.90 →</text>
+                <text x="618" y="77" fill="#859900">auto_refund</text>
+
+                <rect x="10" y="102" width="680" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.6" />
+                <text x="24" y="121">else if duplicate ≥ 0.90 →</text>
+                <text x="560" y="121" fill="#268bd2">route_to_&lt;choice&gt;</text>
+
+                <rect x="10" y="146" width="680" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.6" />
+                <text x="24" y="165">else →</text>
+                <text x="600" y="165" fill="#cb4b16">route to human</text>
+              </g>
+            </svg>
+            <figcaption>Order is the design: the first rule that matches wins. Safety and confidence checks come before action.</figcaption>
+          </figure>
+
+          <ul>
+            <li><b>Thresholds are constants.</b> Changing a number is a reviewed code edit, not a reworded prompt.</li>
+            <li><b>Compose multiple answers.</b> Here the decision needs two questions together: the intent <em>and</em> whether the policy condition holds.</li>
+            <li><b>Weighted sums work too.</b> For several Score questions, normalize each and combine with weights you control, e.g. <code>0.6*severity + 0.3*frustration + 0.1*report_quality</code>.</li>
+          </ul>
+        </section>
+
+        <section id="uncertainty">
+          <h2>Route on Uncertainty</h2>
+          <p class="why">Why it matters: a decision model you cannot trust on edge cases is not usable. Confidence gives the model a principled way to say "I'm not sure."</p>
+          <p>The first rule in <code>decide</code> is the most important one: if the intent is unclear, do not guess — send it to a person.</p>
+
+          <figure>
+            <svg viewBox="0 0 700 120" role="img" aria-label="Number line from 0 to 1 with three zones: do not act, proceed with caution, act automatically">
+              <g font-family="ui-monospace, monospace" font-size="11" fill="currentColor">
+                <rect x="40" y="60" width="620" height="10" rx="5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5" />
+                <rect x="40" y="60" width="434" height="10" rx="5" fill="#dc322f" opacity="0.35" />
+                <rect x="474" y="60" width="124" height="10" fill="#b58900" opacity="0.45" />
+                <rect x="598" y="60" width="62" height="10" rx="5" fill="#859900" opacity="0.5" />
+                <line x1="474" y1="52" x2="474" y2="78" stroke="currentColor" />
+                <line x1="598" y1="52" x2="598" y2="78" stroke="currentColor" />
+                <text x="474" y="94" text-anchor="middle">0.70</text>
+                <text x="598" y="94" text-anchor="middle">0.90</text>
+                <text x="40" y="94" text-anchor="start">0.0</text>
+                <text x="660" y="94" text-anchor="end">1.0</text>
+                <text x="257" y="42" text-anchor="middle" fill="#dc322f">do not act → human</text>
+                <text x="536" y="42" text-anchor="middle" fill="#b58900">review</text>
+                <text x="629" y="42" text-anchor="middle" fill="#859900">act</text>
+              </g>
+            </svg>
+            <figcaption>Thresholds scale with risk: acting on a false positive (issuing a refund) is costly, so the bar for automatic action is high.</figcaption>
+          </figure>
+
+          <ul>
+            <li><b>Three paths.</b> High confidence acts; medium confidence reviews or confirms; low confidence escalates.</li>
+            <li><b>Different actions, different bars.</b> A read-only screen can act at lower confidence than a destructive operation.</li>
+            <li><b>Tune with data.</b> Plot confidence against accuracy on your own inputs and move the lines; the values here are a starting point, not gospel.</li>
+          </ul>
+        </section>
+
+        <section id="decompose">
+          <h2>Decompose the Judgment</h2>
+          <p class="why">Why it matters: a broad question hides several judgments behind one number. Atomic questions expose them so you can inspect, weight, and tune each one.</p>
+          <p>Ask one narrow thing per question. Instead of <em>"Is this ticket ready to auto-refund?"</em>, this example asks the two independent sub-judgments — <code>duplicate_charge</code> (a Noul) and <code>request_type</code> (a Choice) — and combines them in <code>decide</code>. Need frustration too? Add a third question; the request count stays at one.</p>
+
+          <table>
+            <thead><tr><th>Broad (avoid)</th><th>Atomic (do)</th></tr></thead>
+            <tbody>
+              <tr><td>"Should we refund this order?"</td><td><code>duplicate_charge</code> · <code>request_type</code> · <code>frustration</code></td></tr>
+              <tr><td>"Is this message spam?"</td><td><code>requests_credentials</code> · <code>sender_identity_mismatch</code> · <code>unexpected_reward</code></td></tr>
+              <tr><td>"Rate this candidate"</td><td>market · feasibility · differentiation, each its own Score</td></tr>
+            </tbody>
+          </table>
+
+          <ul>
+            <li><b>Decomposition costs nothing extra in round trips.</b> The pieces run in parallel inside the one request.</li>
+            <li><b>Weights live in code.</b> When a combined result does not match your team's decision, change a coefficient and re-run — no prompt rewrite.</li>
+            <li><b>Combine with an <code>if</code> or a weighted sum.</b> Atomic answers make ordinary, testable logic possible.</li>
+          </ul>
+        </section>
+
+        <section id="pitfalls">
+          <h2>Common Pitfalls</h2>
+          <ul>
+            <li><b>Treating a Noul as a measurement.</b> A value of 0.5 means yes and no are equally likely — not "medium skill" or "medium severity." If you want degree, use a Score with defined levels.</li>
+            <li><b>Phrasing a Noul so a high value means "no."</b> "Is the message free of personal data?" inverts the meaning and code reads it backwards. Phrase so a high value means yes.</li>
+            <li><b>Numeric-only Score levels.</b> Levels like <code>["0", "1", "2"]</code> give the model nothing to match against. Describe situations: "Blocking issue; no workaround exists."</li>
+            <li><b>One request per question.</b> Questions on the same state are parallel and cheap to add; batching is dramatically faster and cheaper than many round trips.</li>
+            <li><b>Ignoring confidence.</b> Acting on a flat distribution is how you confidently do the wrong thing. Route the middle and the low to review.</li>
+            <li><b>Reading only the score.</b> A fractional score hides the distribution behind it; check <code>probabilities</code> and <code>confidence</code> when the call matters.</li>
+            <li><b>Putting policy in the prompt.</b> "Refund only if clearly a duplicate" belongs in a threshold in code, where it can be reviewed, tested, and changed.</li>
+          </ul>
+        </section>
+
+        <section id="takeaways">
+          <h2>Key Takeaways</h2>
+          <p>Jev is a decision model: you give it state and typed questions, it returns constrained values and calibrated probabilities, and your code does the rest. Ask each judgment as a small atomic question, batch them into one parallel request, then combine the answers with thresholds and confidence gates you own. The model supplies judgment about unstructured content; your program keeps control of the workflow and the policy.</p>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      // Copy buttons: inject into every code block, copy the raw text.
+      document.querySelectorAll("pre").forEach(function (pre) {
+        var code = pre.querySelector("code") || pre;
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "copy-btn";
+        btn.textContent = "Copy";
+        btn.addEventListener("click", function () {
+          var text = code.innerText;
+          function done() {
+            btn.textContent = "Copied";
+            setTimeout(function () { btn.textContent = "Copy"; }, 1200);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, function () { fallback(); });
+          } else {
+            fallback();
+          }
+          function fallback() {
+            var range = document.createRange();
+            range.selectNodeContents(code);
+            var sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            try { document.execCommand("copy"); done(); } catch (e) {}
+            sel.removeAllRanges();
+          }
+        });
+        pre.appendChild(btn);
+      });
+
+      // Theme toggle: read current effective theme, persist the override.
+      (function () {
+        var root = document.documentElement;
+        var toggle = document.getElementById("theme-toggle");
+        function current() {
+          return root.getAttribute("data-theme") ||
+            (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        }
+        function label() {
+          toggle.textContent = current() === "dark" ? "Light mode" : "Dark mode";
+        }
+        label();
+        toggle.addEventListener("click", function () {
+          var next = current() === "dark" ? "light" : "dark";
+          root.setAttribute("data-theme", next);
+          try { localStorage.setItem("theme", next); } catch (e) {}
+          label();
+        });
+      })();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+    <script>
+      // Highlight after Prism loads, then wrap marked lines so <mark> survives.
+      if (window.Prism) {
+        Prism.highlightAll();
+        document.querySelectorAll("code[data-mark]").forEach(function (code) {
+          var marks = new Set(
+            code.getAttribute("data-mark").split(",").map(function (s) { return parseInt(s.trim(), 10); })
+          );
+          var lines = code.innerHTML.split("\n");
+          code.innerHTML = lines.map(function (line, i) {
+            return marks.has(i + 1) ? "<mark>" + line + "</mark>" : line;
+          }).join("\n");
+        });
+      }
+    </script>
+  </body>
+</html>
