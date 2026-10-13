@@ -281,6 +281,23 @@
       .callout.note { border-left-color: var(--green); }
       .callout b { color: var(--heading); }
 
+      .math {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        border-radius: 8px;
+        padding: 12px 14px;
+        margin: 14px 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        overflow-x: auto;
+        color: var(--ink);
+      }
+      .math .lbl { display: block; color: var(--muted); font-size: 11.5px; margin-bottom: 6px; }
+      .math .cmt { color: var(--muted); font-style: italic; }
+
       .badge {
         display: inline-block;
         font-size: 12px;
@@ -379,7 +396,7 @@ uv run main.py</code></pre>
           <p>Expected output (the values are probabilities, so a live run will differ slightly):</p>
           <pre><code class="language-bash">model                        : jev-1.13.0
 duplicate_charge  (noul)     : 0.97
-request_type      (choice)   : refund (confidence 0.88)
+request_type      (choice)   : refund (confidence 0.91)
 frustration       (score)    : 1.60
 decision                     : auto_refund</code></pre>
         </section>
@@ -463,13 +480,13 @@ RECORDED = {
         "request_type": {
             "type": "choice",
             "choice": "refund",
-            "confidence": 0.88,
+            "confidence": 0.91,
             "probabilities": {"refund": 0.94, "rebooking": 0.02, "information": 0.04},
         },
         "frustration": {
             "type": "score",
             "score": 1.60,
-            "confidence": 0.62,
+            "confidence": 0.40,
             "legend": {
                 0: "Calm and neutral.",
                 1: "Concerned but civil.",
@@ -725,7 +742,7 @@ if __name__ == "__main__":
     print(f'frustration       (score)    : {answers["frustration"].score:.2f}')</code></pre>
 
           <figure>
-            <svg viewBox="0 0 700 210" role="img" aria-label="Left: choice probability bars for refund, rebooking, information. Right: score probabilities across three levels">
+            <svg viewBox="0 0 700 220" role="img" aria-label="Left: choice probability bars for refund 0.94, rebooking 0.02, information 0.04, confidence 0.91. Right: score probabilities across levels calm 0.00, civil 0.40, angry 0.60, score 1.60, confidence 0.40">
               <g font-family="ui-monospace, monospace" font-size="11" fill="currentColor">
                 <text x="10" y="16" fill="#93a1a1">Choice · request_type</text>
                 <!-- refund -->
@@ -743,25 +760,26 @@ if __name__ == "__main__":
                 <rect x="90" y="98" width="220" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
                 <rect x="90" y="98" width="9" height="14" rx="3" fill="#268bd2" />
                 <text x="318" y="109" opacity="0.75">0.04</text>
-                <text x="10" y="134" font-size="11" fill="#268bd2">confidence 0.88 (peaked)</text>
+                <text x="10" y="134" font-size="11" fill="#268bd2">confidence 0.91</text>
 
                 <!-- divide -->
-                <line x1="400" y1="24" x2="400" y2="196" stroke="currentColor" stroke-width="1" opacity="0.25" />
+                <line x1="396" y1="24" x2="396" y2="196" stroke="currentColor" stroke-width="1" opacity="0.25" />
 
-                <text x="424" y="16" fill="#93a1a1">Score · frustration</text>
-                <text x="424" y="48" font-size="11">level 0 calm</text>
-                <rect x="560" y="38" width="110" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
-                <rect x="560" y="38" width="0.5" height="14" rx="3" fill="#6c71c4" />
-                <text x="678" y="49" opacity="0.75">0.00</text>
-                <text x="424" y="78" font-size="11">level 1 civil</text>
-                <rect x="560" y="68" width="110" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
-                <rect x="560" y="68" width="44" height="14" rx="4" fill="#6c71c4" />
-                <text x="678" y="79" opacity="0.85">0.40</text>
-                <text x="424" y="108" font-size="11">level 2 angry</text>
-                <rect x="560" y="98" width="110" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
-                <rect x="560" y="98" width="66" height="14" rx="4" fill="#6c71c4" />
-                <text x="678" y="109" opacity="0.85">0.60</text>
-                <text x="424" y="134" font-size="11" fill="#6c71c4">score 1.60 = 0.40×1 + 0.60×2</text>
+                <text x="412" y="16" fill="#93a1a1">Score · frustration</text>
+                <text x="412" y="48" font-size="11">level 0 calm</text>
+                <rect x="536" y="38" width="104" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
+                <rect x="536" y="38" width="0.5" height="14" rx="3" fill="#6c71c4" />
+                <text x="648" y="49" opacity="0.75">0.00</text>
+                <text x="412" y="78" font-size="11">level 1 civil</text>
+                <rect x="536" y="68" width="104" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
+                <rect x="536" y="68" width="42" height="14" rx="4" fill="#6c71c4" />
+                <text x="648" y="79" opacity="0.85">0.40</text>
+                <text x="412" y="108" font-size="11">level 2 angry</text>
+                <rect x="536" y="98" width="104" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4" />
+                <rect x="536" y="98" width="62" height="14" rx="4" fill="#6c71c4" />
+                <text x="648" y="109" opacity="0.85">0.60</text>
+                <text x="412" y="134" font-size="11" fill="#6c71c4">confidence 0.40</text>
+                <text x="412" y="154" font-size="11" opacity="0.7">score 1.60 = 0.40×1 + 0.60×2</text>
               </g>
             </svg>
             <figcaption>Choice spreads probability over labelled options; Score spreads it over ordered levels. The <em>shape</em> becomes confidence.</figcaption>
@@ -772,6 +790,29 @@ if __name__ == "__main__":
             <li><b><code>probabilities</code></b> — the full distribution over your options or levels; it sums to 1.</li>
             <li><b><code>confidence</code></b> — one number from the shape of that distribution: 1.0 when all probability sits on one outcome, lower the more it spreads. Noul has no separate confidence; its single probability already carries the uncertainty.</li>
           </ul>
+
+          <h3>How these two confidences are computed</h3>
+          <p><code>confidence</code> is not a separate model output: it is a statistic of the <code>probabilities</code> the answer already carries. All the probability on one outcome gives 1.0, an even spread gives 0.0. TypeSafe computes it for you, and the two values in the figure come straight from the formulas below.</p>
+
+          <p><b>Choice</b> measures how far the top option sits above an even split of <code>1/n</code>, where <code>n</code> is the number of options:</p>
+          <div class="math"><span class="lbl">request_type — n = 3 options, top probability p_max = 0.94 (refund)</span>confidence = (p_max − 1/n) / (1 − 1/n)
+           = (0.94 − 1/3) / (1 − 1/3)
+           = 0.607 / 0.667
+           ≈ 0.91</div>
+
+          <p><b>Score</b> also counts how far the probability sits from the most likely level, because its levels are ordered:</p>
+          <div class="math"><span class="lbl">frustration — n = 3 levels, most likely level m = 2 (angry)</span>spread     = Σ pᵢ·|i − m|
+           = 0.40×|1 − 2| + 0.60×|2 − 2| = 0.40
+
+<span class="cmt"># MAD_unif — mean absolute deviation of a uniform (evenly spread) distribution</span>
+MAD_unif   = (1/n)·Σ |i − (n−1)/2|
+           = (|0 − 1| + |1 − 1| + |2 − 1|) / 3 = 2/3 ≈ 0.67
+
+confidence = max(0, 1 − spread / MAD_unif)
+           = 1 − 0.40 / 0.67
+           ≈ 0.40</div>
+
+          <div class="callout note"><b>Noul has no separate confidence.</b> Its one probability already describes both outcomes completely. If you want a value on the same 0–1 scale — for example to gate Nouls and Choices with one piece of code — use <code>|2p − 1|</code>, which is 0 at p = 0.5 and 1 at p = 0 or 1.</div>
 
           <div class="callout warn"><b>Two different distributions can share one number.</b> A score of 1.0 can mean all probability on level 1, or half on level 0 and half on level 2. Read <code>probabilities</code> and <code>confidence</code> alongside the value.</div>
         </section>
@@ -805,19 +846,19 @@ def decide(response) -&gt; str:
               <g font-family="ui-monospace, monospace" font-size="11.5" fill="currentColor">
                 <rect x="10" y="14" width="680" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.6" />
                 <text x="24" y="33">if request.confidence &lt; 0.70 →</text>
-                <text x="600" y="33" fill="#cb4b16">route to human</text>
+                <text x="678" y="33" text-anchor="end" fill="#cb4b16">route to human</text>
 
                 <rect x="10" y="58" width="680" height="30" rx="7" fill="none" stroke="#859900" stroke-width="1.3" />
                 <text x="24" y="77" fill="#859900">else if choice == "refund" and duplicate ≥ 0.90 →</text>
-                <text x="618" y="77" fill="#859900">auto_refund</text>
+                <text x="678" y="77" text-anchor="end" fill="#859900">auto_refund</text>
 
                 <rect x="10" y="102" width="680" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.6" />
                 <text x="24" y="121">else if duplicate ≥ 0.90 →</text>
-                <text x="560" y="121" fill="#268bd2">route_to_&lt;choice&gt;</text>
+                <text x="678" y="121" text-anchor="end" fill="#268bd2">route_to_&lt;choice&gt;</text>
 
                 <rect x="10" y="146" width="680" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.6" />
                 <text x="24" y="165">else →</text>
-                <text x="600" y="165" fill="#cb4b16">route to human</text>
+                <text x="678" y="165" text-anchor="end" fill="#cb4b16">route to human</text>
               </g>
             </svg>
             <figcaption>Order is the design: the first rule that matches wins. Safety and confidence checks come before action.</figcaption>
@@ -836,7 +877,7 @@ def decide(response) -&gt; str:
           <p>The first rule in <code>decide</code> is the most important one: if the intent is unclear, do not guess — send it to a person.</p>
 
           <figure>
-            <svg viewBox="0 0 700 120" role="img" aria-label="Number line from 0 to 1 with three zones: do not act, proceed with caution, act automatically">
+            <svg viewBox="0 0 700 120" role="img" aria-label="Number line from 0 to 1 with three confidence zones: below 0.70 escalate to a person, 0.70 to 0.90 confirm before acting, above 0.90 act directly">
               <g font-family="ui-monospace, monospace" font-size="11" fill="currentColor">
                 <rect x="40" y="60" width="620" height="10" rx="5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5" />
                 <rect x="40" y="60" width="434" height="10" rx="5" fill="#dc322f" opacity="0.35" />
@@ -848,13 +889,15 @@ def decide(response) -&gt; str:
                 <text x="598" y="94" text-anchor="middle">0.90</text>
                 <text x="40" y="94" text-anchor="start">0.0</text>
                 <text x="660" y="94" text-anchor="end">1.0</text>
-                <text x="257" y="42" text-anchor="middle" fill="#dc322f">do not act → human</text>
-                <text x="536" y="42" text-anchor="middle" fill="#b58900">review</text>
+                <text x="257" y="42" text-anchor="middle" fill="#dc322f">escalate to a person</text>
+                <text x="536" y="42" text-anchor="middle" fill="#b58900">confirm, then act</text>
                 <text x="629" y="42" text-anchor="middle" fill="#859900">act</text>
               </g>
             </svg>
             <figcaption>Thresholds scale with risk: acting on a false positive (issuing a refund) is costly, so the bar for automatic action is high.</figcaption>
           </figure>
+
+          <p>The red and yellow bands both involve a person, but they are different situations. In the red band the model has <em>no usable read</em>, so a person decides the outcome from scratch. In the yellow band the model <em>does</em> have a probable answer; the risk is acting on it unverified, so you confirm it — ask the user, run a cheap check, or flag it for review — and only then act. In the green band you act directly.</p>
 
           <ul>
             <li><b>Three paths.</b> High confidence acts; medium confidence reviews or confirms; low confidence escalates.</li>
