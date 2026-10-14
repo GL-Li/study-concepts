@@ -281,6 +281,34 @@ http {
     include /etc/nginx/sites-enabled/*;     <span class="c"># ← and the stock site</span>
 }</code></pre></div>
 
+  <div class="prose">
+    <h3>Two include slots: conf.d vs sites-enabled</h3>
+    <p>Both <code>include</code> lines do the same mechanical thing — textually splice files into <code>http {}</code> — but they exist for different jobs and follow different conventions. Nginx itself does not care which one holds a <code>server</code> block; the split is Debian/Ubuntu convention, not a feature.</p>
+  </div>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Aspect</th><th><code>conf.d/</code></th><th><code>sites-enabled/</code></th></tr></thead>
+      <tbody>
+        <tr><td>Glob</td><td><code>*.conf</code> — only files ending in <code>.conf</code></td><td><code>*</code> — any filename</td></tr>
+        <tr><td>Purpose</td><td>General drop-ins: shared snippets, <code>upstream</code>, <code>map</code>, global tweaks</td><td>One file per virtual host, mirroring Apache's layout</td></tr>
+        <tr><td>Enable a config</td><td>Create the file in place</td><td>Symlink it from <code>sites-available/</code></td></tr>
+        <tr><td>Disable a config</td><td>Delete the file</td><td>Remove the symlink; the file stays in <code>sites-available/</code></td></tr>
+        <tr><td>Typical content</td><td>Any http-context block</td><td>A <code>server {}</code> vhost</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <p>Use <b><code>conf.d/</code></b> for things that are not a site: an <code>upstream</code> group shared by several vhosts, a <code>map</code>, a gzip or logging override, a catch-all <code>default_server</code>. Use <b><code>sites-enabled/</code></b> when you want the familiar enable/disable workflow — keep the real file in <code>sites-available/</code> and switch it on with a symlink:</p>
+  </div>
+  <div class="code"><div class="bar"><span class="fn">shell</span><span class="tag">enable a vhost</span></div><pre><code>sudo ln -s /etc/nginx/sites-available/blog /etc/nginx/sites-enabled/blog
+sudo nginx -t &amp;&amp; sudo systemctl reload nginx   <span class="c"># disable: rm the symlink</span></code></pre></div>
+
+  <div class="callout">
+    <p><strong>Order matters: includes are spliced top to bottom.</strong> The stock file pulls in <code>conf.d/*.conf</code> before <code>sites-enabled/*</code>, and nginx parses them in that order. That is why server-wide definitions (an <code>upstream</code>, a <code>map</code>) are conventionally kept in <code>conf.d/</code> — they are read first and are in scope for the vhosts that follow. Order also decides which block becomes the default when no <code>default_server</code> is set: it is the first <code>server</code> for that port.</p>
+  </div>
+
   <div class="callout warn">
     <p><strong>Simple directives end in a semicolon; blocks use braces.</strong> A missing <code>;</code> is the most common config error, which is exactly why <code>sudo nginx -t</code> exists.</p>
   </div>
