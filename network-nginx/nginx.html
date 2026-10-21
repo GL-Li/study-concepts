@@ -40,7 +40,7 @@
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
 body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--serif);font-size:16px;line-height:1.65}
-.page{max-width:1040px;margin:0 auto;padding:0 24px 96px}
+.page{max-width:1180px;margin:0 auto;padding:0 24px 96px}
 .prose{max-width:70ch}
 h1,h2,h3{font-family:var(--sans);text-wrap:balance;margin:0}
 a{color:var(--accent)}
@@ -56,15 +56,23 @@ h1{font-size:clamp(2rem,4.6vw,2.75rem);font-weight:700;letter-spacing:-.02em;lin
   font-family:var(--mono);font-size:.75rem;color:var(--ink-3)}
 .facts b{display:block;font-weight:500;color:var(--ink-2);text-transform:uppercase;letter-spacing:.09em;font-size:.6875rem;margin-bottom:2px}
 
-/* toc */
-.toc{margin:28px 0 0;padding:18px 22px;background:var(--surface);border:1px solid var(--border);border-radius:6px;columns:2;column-gap:36px}
-@media (max-width:560px){.toc{columns:1}}
-.toc h2{font-size:.6875rem;font-family:var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);font-weight:500;margin:0 0 10px;column-span:all}
+/* layout + sticky toc sidebar */
+.layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:44px}
+.sidebar{min-width:0}
+.content{min-width:0}
+.toc{position:sticky;top:24px;margin:46px 0 0;padding:16px 18px;background:var(--surface);border:1px solid var(--border);border-radius:6px;max-height:calc(100vh - 48px);overflow:auto}
+.toc h2{font-size:.6875rem;font-family:var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);font-weight:500;margin:0 0 10px}
 .toc ol{margin:0;padding:0;list-style:none;padding-left:0}
-.toc li{margin:5px 0;font-size:.875rem}
-.toc a{text-decoration:none;display:flex;gap:10px;align-items:baseline}
+.toc li{margin:4px 0;font-size:.8125rem}
+.toc a{text-decoration:none;display:flex;gap:8px;align-items:baseline}
 .toc a:hover{text-decoration:underline}
 .toc .n{font-family:var(--mono);font-size:.6875rem;color:var(--ink-3);min-width:1.5em}
+@media (max-width:900px){
+  .layout{grid-template-columns:1fr;gap:0}
+  .toc{position:static;max-height:none;margin:28px 0 0;columns:2;column-gap:32px}
+  .toc h2{column-span:all}
+}
+@media (max-width:560px){.toc{columns:1}}
 
 /* sections */
 section{padding:46px 0 0;scroll-margin-top:16px}
@@ -144,6 +152,10 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--border);
     <li><b>Sandbox</b>/etc/nginx/conf.d/</li>
     <li><b>Stock site</b>/var/www/html</li>
   </ul>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
   <nav class="toc">
     <h2>Contents</h2>
     <ol>
@@ -161,7 +173,9 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--border);
       <li><a href="#cheat"><span class="n">12</span> Cheat sheet</a></li>
     </ol>
   </nav>
-</header>
+</aside>
+
+<main class="content">
 
 <!-- 01 -->
 <section id="installed">
@@ -933,6 +947,9 @@ pkill -f 'http.server'; pkill -f echo.py   <span class="c"># stop the demo backe
   concepts-in-html/nginx.html · hands-on lessons against a stock Ubuntu/Debian nginx install<br>
   config in /etc/nginx/{nginx.conf,conf.d/,sites-available/,sites-enabled/} · lessons use ports 8080–8085 and 8443; the default site on :80 is left alone
 </footer>
+
+</main>
+</div>
 
 </div>
 </body>
