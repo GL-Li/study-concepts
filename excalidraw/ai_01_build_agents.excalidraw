@@ -1,0 +1,51 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://marketplace.visualstudio.com/items?itemName=pomdtr.excalidraw-editor",
+  "elements": [
+    {
+      "id": "CXpYWs-8a9iaIvvZfSz3l",
+      "type": "text",
+      "x": 451.234375,
+      "y": 237.40625,
+      "width": 475.97955322265625,
+      "height": 50,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a0",
+      "roundness": null,
+      "seed": 1610538560,
+      "version": 77,
+      "versionNonce": 359957952,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1792757782539,
+      "link": null,
+      "locked": false,
+      "text": "never be deterministic but\nhow to make reproducible output (in some sense)",
+      "fontSize": 20,
+      "fontFamily": 5,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "containerId": null,
+      "originalText": "never be deterministic but\nhow to make reproducible output (in some sense)",
+      "autoResize": true,
+      "lineHeight": 1.25
+    }
+  ],
+  "appState": {
+    "gridSize": 20,
+    "gridStep": 5,
+    "gridModeEnabled": false,
+    "viewBackgroundColor": "#ffffff"
+  },
+  "files": {}
+}
