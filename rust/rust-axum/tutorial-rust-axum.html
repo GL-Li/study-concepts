@@ -378,6 +378,9 @@
           <a href="#how-to-use">How to Use</a>
           <a href="#what-you-learn">What You'll Learn</a>
           <a href="#example">The Example</a>
+          <h2>Foundations</h2>
+          <a href="#http-basics">HTTP request &amp; response</a>
+          <a href="#core-loop">The core loop</a>
           <h2>Concepts</h2>
           <a href="#server">1 · Server entry point</a>
           <a href="#routing">2 · Routing</a>
@@ -618,6 +621,98 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }</code></pre>
           </div>
+        </section>
+
+        <section id="http-basics">
+          <h2>HTTP request &amp; response basics</h2>
+          <p>
+            Axum is an HTTP framework, so keep the two messages it reads and
+            writes clearly in mind. HTTP is a text protocol: the client sends
+            <strong>one request</strong>, the server replies with
+            <strong>one response</strong>, and each is a start line, headers,
+            a blank line, and an optional body.
+          </p>
+
+          <h3>The request</h3>
+          <div class="code-block">
+            <button class="copy-btn" type="button">Copy</button>
+            <pre><code class="language-http">POST /notes?limit=10 HTTP/1.1
+Host: 127.0.0.1:3000
+Content-Type: application/json
+Content-Length: 43
+
+{"title":"Groceries","body":"milk, eggs"}</code></pre>
+          </div>
+          <ul>
+            <li><strong>Request line</strong> — method (<code>POST</code>), request target (<code>/notes?limit=10</code>), and protocol (<code>HTTP/1.1</code>). The target splits into a <em>path</em> and a <em>query string</em>.</li>
+            <li><strong>Headers</strong> — metadata such as <code>Host</code>, <code>Content-Type</code>, and <code>Authorization</code>.</li>
+            <li><strong>Body</strong> — optional payload; here the JSON document. <code>GET</code> requests usually have none.</li>
+          </ul>
+
+          <h3>The response</h3>
+          <div class="code-block">
+            <button class="copy-btn" type="button">Copy</button>
+            <pre><code class="language-http">HTTP/1.1 201 Created
+Content-Type: application/json
+Content-Length: 47
+
+{"id":2,"title":"Groceries","body":"milk, eggs"}</code></pre>
+          </div>
+          <ul>
+            <li><strong>Status line</strong> — protocol plus a numeric <strong>status code</strong> and reason phrase (<code>201 Created</code>).</li>
+            <li><strong>Headers</strong> — same shape as request headers; <code>Content-Type</code> tells the client how to read the body.</li>
+            <li><strong>Body</strong> — optional; here the JSON for the note that was created.</li>
+          </ul>
+
+          <p>The pieces this tutorial uses:</p>
+          <table>
+            <thead><tr><th>Piece</th><th>Examples in this app</th></tr></thead>
+            <tbody>
+              <tr><td>Method</td><td><code>GET</code> reads, <code>POST</code> creates</td></tr>
+              <tr><td>Path</td><td><code>/</code>, <code>/notes</code>, <code>/notes/42</code></td></tr>
+              <tr><td>Query string</td><td><code>?limit=10</code></td></tr>
+              <tr><td>Headers</td><td><code>Content-Type: application/json</code></td></tr>
+              <tr><td>Body</td><td>JSON for <code>POST /notes</code></td></tr>
+              <tr><td>Status</td><td><code>200</code>, <code>201</code>, <code>400</code>, <code>404</code>, <code>415</code>, <code>422</code>, <code>500</code></td></tr>
+            </tbody>
+          </table>
+          <div class="callout">
+            <strong>Mapping to Axum:</strong> each piece has a typed door.
+            <code>Method</code> and <code>Uri</code> expose the request line,
+            <code>Path&lt;T&gt;</code> the path captures, <code>Query&lt;T&gt;</code>
+            the query string, <code>HeaderMap</code> / <code>TypedHeader</code>
+            the headers, and <code>Json&lt;T&gt;</code> / <code>Bytes</code> the
+            body. The status code is chosen by whatever the handler returns.
+          </div>
+        </section>
+
+        <section id="core-loop">
+          <h2>The core loop</h2>
+          <p>
+            Strip away the framework and a web server does one thing, endlessly:
+            read a request and produce a response. Axum's job is to let you write
+            the middle of that loop as ordinary, typed Rust.
+          </p>
+          <ol>
+            <li><strong>Accept and parse.</strong> <code>axum::serve(listener, app)</code> hands connections to Hyper, which reads the bytes into a request (<code>Method</code>, <code>Uri</code>, headers, body).</li>
+            <li><strong>Match.</strong> The <code>Router</code> compares method + path against its table and picks a handler.</li>
+            <li><strong>Extract.</strong> Axum runs the handler's arguments left to right, pulling typed values out of the request. A failed extraction short-circuits with a rejection response.</li>
+            <li><strong>Run.</strong> Your <code>async fn</code> executes with those typed values.</li>
+            <li><strong>Respond.</strong> The return value goes through <code>IntoResponse</code>, which produces a status, headers, and body; Hyper writes them back.</li>
+          </ol>
+          <div class="callout">
+            <strong>Everything else sits above this loop.</strong> Routing,
+            extractors, shared state, typed errors, and middleware are
+            conveniences layered on top of <em>request in &rarr; response out</em>.
+            When something feels magical, trace it back to which of these five
+            steps it belongs to.
+          </div>
+          <p>
+            The whole loop is visible in the example program: the
+            <code>serve</code> call at the end of <code>main</code> drives step 1,
+            the <code>.route(...)</code> calls define step 2, each handler's
+            argument list is step 3, and its return type is step 5.
+          </p>
         </section>
 
         <section id="server">
@@ -1113,6 +1208,7 @@ impl IntoResponse for AppError {
     <script src="https://cdn.jsdelivr.net/npm/prismjs@1/prism.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-rust.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-http.min.js"></script>
     <script>
       (function () {
         var btn = document.getElementById("theme-toggle");
