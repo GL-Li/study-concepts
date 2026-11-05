@@ -25,6 +25,10 @@ axum::serve(listener, app).await.unwrap();
 ### Router
 A type for composing handlers and services.
 
+Routing: a server decide what to run by looking at two things:
+- the HTTP method
+- the URL path
+
 ```rust
 let app = Router::new()
     .route("/", get(root))
@@ -46,7 +50,7 @@ Extractors are types for how handler read the request -- path, query, body, head
 Built-in extractors: `State`, `Path`, `Query`, `Json`, `Request`, ...
 
 ### Path parameters
-`Path<T>` turns the `{...}` declaired in the route into a typed Rust value, for example `{id}` in `"/notes/{id}`.
+`Path<T>` turns the path parameters `{...}` declaired in the route into a typed Rust value, for example `{id}` in `"/notes/{id}`.
 
 How `Path<T>` works, for `GET /notes/42`:
 - Router matches the path against `.route("/notes/{id}", get(get_note))` (src/main.rs:115) and captures `id = "42"`.
@@ -96,6 +100,8 @@ How it works for request: `GET /notes/1`
     ```
 
 ### Shared state
+When building a router in which handlers extract state, the state is provided with `.with_state(...)` at the end.
+
 This state is shared by each request with `Arc::clone` and is extracted by extractor `State<T>`. `State<T>` extractor is used in hadlers that depend on data in state.
 
 The state extraction is straightforward with `State(state): State<T>` destructure in handler parameters.
