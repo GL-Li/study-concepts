@@ -643,8 +643,8 @@ curl -i -X PUT http://127.0.0.1:8000/tasks/1 \
   -H 'Content-Type: application/json' \
   -d '{"title":"learn more HTTP","done":true}'
 curl -i http://127.0.0.1:8000/whoami -H 'User-Agent: tutorial'
-curl -i -X POST http://127.0.0.1:8000/login
-curl -i http://127.0.0.1:8000/me
+curl -i -c jar.txt -X POST http://127.0.0.1:8000/login
+curl -i -b jar.txt http://127.0.0.1:8000/me
 curl -i -X DELETE http://127.0.0.1:8000/tasks/1</code></pre>
           </div>
           <p>
@@ -654,6 +654,16 @@ curl -i -X DELETE http://127.0.0.1:8000/tasks/1</code></pre>
             <code>204 No Content</code> with an empty body. Malformed JSON gets
             <code>400 Bad Request</code>; JSON that parses but fails the title
             rule gets <code>422 Unprocessable Entity</code>.
+          </p>
+          <p>
+            <code>curl</code> does not keep cookies on its own. The
+            <code>-c jar.txt</code> on <code>/login</code> saves the
+            <code>Set-Cookie</code> header to a file, and the
+            <code>-b jar.txt</code> on <code>/me</code> reads that file and sends
+            <code>Cookie: session=alice</code> back. Run <code>/me</code> without
+            <code>-b jar.txt</code> and it answers
+            <code>401 Unauthorized</code>, because that request carries no
+            cookie.
           </p>
         </section>
 
