@@ -1,0 +1,1574 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Middleware in Web Apps — with Axum</title>
+    <script>
+      // Set the theme before first paint so there is no flash of the wrong one.
+      try {
+        var saved = localStorage.getItem("theme");
+        if (saved === "light" || saved === "dark") {
+          document.documentElement.setAttribute("data-theme", saved);
+        }
+      } catch (e) {}
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #fdf6e3;
+        --bg-alt: #eee8d5;
+        --text: #586e75;
+        --heading: #073642;
+        --muted: #93a1a1;
+        --border: #ddd6c1;
+        --link: #268bd2;
+        --code-bg: #eee8d5;
+        --code-text: #073642;
+        --accent: #b58900;
+        --callout-bg: #f6eed9;
+        --mark-bg: #ffeaa0;
+        --ok: #859900;
+        --bad: #dc322f;
+        --shadow: rgba(0, 43, 54, 0.08);
+        --syntax-violet: #6c71c4;
+        --syntax-orange: #cb4b16;
+        --syntax-cyan: #2aa198;
+      }
+
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #002b36;
+        --bg-alt: #073642;
+        --text: #93a1a1;
+        --heading: #eee8d5;
+        --muted: #657b83;
+        --border: #134956;
+        --link: #6fbce8;
+        --code-bg: #073642;
+        --code-text: #eee8d5;
+        --accent: #b58900;
+        --callout-bg: #06313c;
+        --mark-bg: #5c4d12;
+        --ok: #a6c000;
+        --bad: #ff6b63;
+        --shadow: rgba(0, 0, 0, 0.35);
+          --syntax-violet: #b5a0ff;
+          --syntax-orange: #ff8a4c;
+          --syntax-cyan: #4fd6cc;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          color-scheme: dark;
+          --bg: #002b36;
+          --bg-alt: #073642;
+          --text: #93a1a1;
+          --heading: #eee8d5;
+          --muted: #657b83;
+          --border: #134956;
+          --link: #6fbce8;
+          --code-bg: #073642;
+          --code-text: #eee8d5;
+          --accent: #b58900;
+          --callout-bg: #06313c;
+          --mark-bg: #5c4d12;
+          --ok: #a6c000;
+          --bad: #ff6b63;
+          --shadow: rgba(0, 0, 0, 0.35);
+          --syntax-violet: #b5a0ff;
+          --syntax-orange: #ff8a4c;
+          --syntax-cyan: #4fd6cc;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+        font-size: 16px;
+        line-height: 1.65;
+      }
+
+      .wrap {
+        display: grid;
+        grid-template-columns: 250px minmax(0, 1fr);
+        gap: 36px;
+        align-items: start;
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 32px 24px 64px;
+      }
+
+      /* Pinned table of contents on the left. */
+      .sidebar {
+        position: sticky;
+        top: 24px;
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+        align-self: start;
+        padding: 16px;
+        background: var(--bg-alt);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+
+      .sidebar h2 {
+        margin: 0 0 10px;
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .sidebar nav a {
+        display: block;
+        padding: 6px 8px;
+        margin: 2px 0;
+        color: var(--text);
+        text-decoration: none;
+        border-left: 3px solid transparent;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      .sidebar nav a:hover,
+      .sidebar nav a:focus {
+        color: var(--heading);
+        background: var(--bg);
+        border-left-color: var(--accent);
+      }
+
+      #theme-toggle {
+        display: block;
+        width: 100%;
+        margin-bottom: 14px;
+        padding: 8px 10px;
+        font: inherit;
+        font-size: 14px;
+        color: var(--heading);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        cursor: pointer;
+      }
+
+      #theme-toggle:hover {
+        border-color: var(--accent);
+      }
+
+      main {
+        min-width: 0;
+        max-width: 840px;
+      }
+
+      header h1 {
+        margin: 0 0 6px;
+        font-size: clamp(2rem, 5vw, 2.7rem);
+        line-height: 1.15;
+        color: var(--heading);
+      }
+
+      header p {
+        margin: 0 0 28px;
+        font-size: 1.1rem;
+        color: var(--muted);
+      }
+
+      section {
+        scroll-margin-top: 20px;
+        margin-bottom: 40px;
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        font-size: 1.5rem;
+        line-height: 1.25;
+        color: var(--heading);
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 8px;
+      }
+
+      h3 {
+        margin: 22px 0 8px;
+        font-size: 1.12rem;
+        color: var(--heading);
+      }
+
+      p {
+        margin: 0 0 12px;
+      }
+
+      ul,
+      ol {
+        padding-left: 1.4em;
+      }
+
+      li {
+        margin: 6px 0;
+      }
+
+      strong {
+        color: var(--heading);
+      }
+
+      a {
+        color: var(--link);
+        text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+      }
+
+      /* Inline code, not code blocks. */
+      :not(pre) > code {
+        padding: 0.12em 0.35em;
+        background: var(--bg-alt);
+        color: var(--code-text);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 0.9em;
+      }
+
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          "Liberation Mono", monospace;
+      }
+
+      .code-wrap {
+        position: relative;
+        margin: 14px 0 18px;
+      }
+
+      .code-wrap pre {
+        margin: 0;
+        padding: 16px 18px;
+        overflow-x: auto;
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 13.5px;
+        line-height: 1.55;
+        tab-size: 4;
+      }
+
+      .code-wrap code {
+        color: var(--code-text);
+        white-space: pre;
+      }
+
+      .copy {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        padding: 4px 9px;
+        font: inherit;
+        font-size: 12px;
+        color: var(--heading);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        cursor: pointer;
+        opacity: 0.85;
+      }
+
+      .copy:hover,
+      .copy:focus {
+        opacity: 1;
+        border-color: var(--accent);
+      }
+
+      mark {
+        background: var(--mark-bg);
+        color: inherit;
+        padding: 0 0.12em;
+        border-radius: 3px;
+      }
+
+      .callout {
+        margin: 18px 0;
+        padding: 12px 16px;
+        background: var(--callout-bg);
+        border-left: 4px solid var(--accent);
+        border-radius: 6px;
+      }
+
+      .callout p:last-child {
+        margin-bottom: 0;
+      }
+
+      table {
+        width: 100%;
+        margin: 16px 0 20px;
+        border-collapse: collapse;
+        font-size: 14.5px;
+      }
+
+      th,
+      td {
+        padding: 9px 12px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+
+      thead th {
+        background: var(--bg-alt);
+        color: var(--heading);
+        font-size: 13px;
+        letter-spacing: 0.02em;
+      }
+
+      tbody tr:hover {
+        background: var(--bg-alt);
+      }
+
+      figure {
+        margin: 18px 0 22px;
+        padding: 14px;
+        background: var(--bg-alt);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+
+      figure svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      figcaption {
+        margin-top: 10px;
+        font-size: 13.5px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .dg text {
+        fill: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+        font-size: 13px;
+      }
+
+      .dg .t-head {
+        fill: var(--heading);
+        font-weight: 650;
+        font-size: 14px;
+      }
+
+      .dg .t-mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      .dg .t-muted {
+        fill: var(--muted);
+        font-size: 12px;
+      }
+
+      .dg .box {
+        fill: var(--bg);
+        stroke: var(--border);
+        stroke-width: 1.5;
+      }
+
+      .dg .box-accent {
+        fill: var(--callout-bg);
+        stroke: var(--accent);
+        stroke-width: 1.5;
+      }
+
+      .dg .box-ok {
+        fill: var(--bg);
+        stroke: var(--ok);
+        stroke-width: 1.5;
+      }
+
+      .dg .box-bad {
+        fill: var(--bg);
+        stroke: var(--bad);
+        stroke-width: 1.5;
+      }
+
+      .dg .arrow {
+        stroke: var(--muted);
+        stroke-width: 1.5;
+        fill: none;
+      }
+
+      .dg .life {
+        stroke: var(--border);
+        stroke-width: 1.5;
+        stroke-dasharray: 5 5;
+      }
+
+      .pitfall {
+        margin: 16px 0;
+        padding-left: 14px;
+        border-left: 3px solid var(--border);
+      }
+
+      .pitfall strong {
+        display: block;
+        margin-bottom: 2px;
+      }
+
+      @media (max-width: 820px) {
+        .wrap {
+          display: block;
+          padding: 20px 16px 48px;
+        }
+
+        .sidebar {
+          position: static;
+          max-height: none;
+          margin-bottom: 24px;
+        }
+
+        .sidebar nav {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+        }
+
+        .sidebar nav a {
+          border-left: none;
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          padding: 4px 10px;
+          font-size: 13px;
+        }
+      }
+
+      @media print {
+        :root,
+        :root[data-theme="dark"],
+        :root[data-theme="light"] {
+          color-scheme: light;
+          --bg: #ffffff;
+          --bg-alt: #f3f3f3;
+          --text: #000000;
+          --heading: #000000;
+          --muted: #444444;
+          --border: #999999;
+          --link: #000000;
+          --code-bg: #f3f3f3;
+          --code-text: #000000;
+          --accent: #000000;
+          --callout-bg: #f3f3f3;
+          --mark-bg: #ffef9e;
+          --shadow: transparent;
+          --syntax-violet: #333333;
+          --syntax-orange: #333333;
+          --syntax-cyan: #333333;
+        }
+
+        .wrap {
+          display: block;
+          max-width: none;
+          padding: 0;
+        }
+
+        .sidebar,
+        .copy {
+          display: none !important;
+        }
+
+        main {
+          max-width: none;
+        }
+
+        a {
+          color: #000;
+          text-decoration: underline;
+        }
+
+        pre,
+        figure,
+        table,
+        .callout {
+          break-inside: avoid;
+        }
+
+        h2,
+        h3 {
+          break-after: avoid;
+        }
+
+        .dg .box,
+        .dg .box-accent,
+        .dg .box-ok,
+        .dg .box-bad {
+          fill: #ffffff;
+        }
+      }
+
+      /* Prism token colors follow the active theme variables. */
+      .token.comment,
+      .token.prolog,
+      .token.doctype,
+      .token.cdata {
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      .token.punctuation {
+        color: var(--text);
+      }
+
+      .token.property,
+      .token.tag,
+      .token.constant,
+      .token.symbol,
+      .token.deleted {
+        color: var(--bad);
+      }
+
+      .token.boolean,
+      .token.number {
+        color: var(--syntax-violet);
+      }
+
+      .token.selector,
+      .token.attr-name,
+      .token.string,
+      .token.char,
+      .token.builtin,
+      .token.inserted {
+        color: var(--ok);
+      }
+
+      .token.operator,
+      .token.entity,
+      .token.url,
+      .token.variable {
+        color: var(--syntax-orange);
+      }
+
+      .token.atrule,
+      .token.attr-value,
+      .token.keyword {
+        color: var(--link);
+      }
+
+      .token.function,
+      .token.class-name {
+        color: var(--accent);
+      }
+
+      .token.regex,
+      .token.important {
+        color: var(--syntax-cyan);
+      }
+    
+      .dg marker path {
+        fill: var(--muted);
+      }
+
+      .src {
+        margin: 4px 0 -4px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+
+      .dg .onion-1 {
+        fill: var(--callout-bg);
+        stroke: var(--accent);
+        stroke-width: 1.5;
+      }
+
+      .dg .onion-2 {
+        fill: var(--bg);
+        stroke: var(--border);
+        stroke-width: 1.5;
+      }
+
+      .dg .onion-3 {
+        fill: var(--bg-alt);
+        stroke: var(--border);
+        stroke-width: 1.5;
+      }
+
+      .dg .onion-core {
+        fill: var(--bg);
+        stroke: var(--link);
+        stroke-width: 2;
+      }
+
+      @media print {
+        .dg .onion-1,
+        .dg .onion-2,
+        .dg .onion-3,
+        .dg .onion-core {
+          fill: #ffffff;
+        }
+      }
+</style>
+  </head>
+  <body>
+    <div class="wrap">
+      <aside class="sidebar">
+        <button id="theme-toggle" type="button">Switch theme</button>
+        <h2>Contents</h2>
+        <nav aria-label="Table of contents">
+          <a href="#how-to-use">How to Use</a>
+          <a href="#what-you-learn">What You'll Learn</a>
+          <a href="#example">The Example</a>
+          <a href="#what-is-middleware">1. What middleware is</a>
+          <a href="#tower-service-layer">2. Service and Layer</a>
+          <a href="#from-fn-next">3. from_fn and Next</a>
+          <a href="#request-response">4. Reading and changing</a>
+          <a href="#short-circuit">5. Short-circuiting</a>
+          <a href="#extensions">6. Request extensions</a>
+          <a href="#state">7. Shared state</a>
+          <a href="#ordering">8. Layer ordering</a>
+          <a href="#layer-vs-route-layer">9. layer vs route_layer</a>
+          <a href="#ecosystem">10. tower-http</a>
+          <a href="#pitfalls">Common Pitfalls</a>
+          <a href="#takeaways">Key Takeaways</a>
+        </nav>
+      </aside>
+      <main>
+        
+<header>
+  <h1>Middleware in Web Apps — with Axum</h1>
+  <p>Wrap your handlers with reusable request/response logic using axum's tower-powered middleware.</p>
+</header>
+
+<section id="how-to-use">
+  <h2>How to Use</h2>
+  <p>Create a new binary crate and add the crates the example needs. These are the current stable versions.</p>
+  <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-bash">cargo new mw-demo --bin
+cd mw-demo
+cargo add axum@0.8
+cargo add tokio@1 --features macros,rt-multi-thread,net
+cargo add tower@0.5</code></pre></div>
+  <p>Replace the contents of <code>src/main.rs</code> with the code in <a href="#example">The Example</a>, then start the server:</p>
+  <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-bash">cargo run</code></pre></div>
+  <p>Leave that terminal running. In a second terminal, send these requests:</p>
+  <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-bash">curl -i http://127.0.0.1:3000/
+curl -i http://127.0.0.1:3000/health
+curl -i http://127.0.0.1:3000/dashboard
+curl -i -H "Authorization: Bearer secret" http://127.0.0.1:3000/dashboard
+curl -i http://127.0.0.1:3000/missing</code></pre></div>
+  <p>You should see one log line per request in the server terminal. In the responses, watch the
+  <code>x-request-number</code> header on every request, the <code>401</code> when the token is
+  missing, and the <code>x-response-time</code> header even on the <code>404</code>.</p>
+  <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-text"># server terminal
+listening on http://127.0.0.1:3000
+GET / -&gt; 200 OK (0.0 ms)
+GET /health -&gt; 200 OK (0.0 ms)
+GET /dashboard -&gt; 401 Unauthorized (0.0 ms)
+GET /dashboard -&gt; 200 OK (0.0 ms)
+GET /missing -&gt; 404 Not Found (0.0 ms)
+
+# a few of the responses
+HTTP/1.1 200 OK
+x-response-time: 0.0ms
+x-request-number: 1
+
+HTTP/1.1 401 Unauthorized
+x-request-number: 3
+
+HTTP/1.1 200 OK
+x-request-number: 4
+private page: welcome, Ada
+
+HTTP/1.1 404 Not Found
+x-request-number: 5</code></pre></div>
+</section>
+
+<section id="what-you-learn">
+  <h2>What You'll Learn</h2>
+  <ul>
+    <li>The onion model: middleware runs before <em>and</em> after the handler.</li>
+    <li>How axum reuses tower's <code>Service</code> and <code>Layer</code> traits.</li>
+    <li>Writing middleware with <code>middleware::from_fn</code> and <code>Next</code>.</li>
+    <li>Reading and rewriting requests and responses.</li>
+    <li>Short-circuiting a request (for example, rejecting bad credentials).</li>
+    <li>Passing data from middleware to a handler with request extensions.</li>
+    <li>Injecting shared state with <code>from_fn_with_state</code>.</li>
+    <li>Controlling execution order with <code>ServiceBuilder</code> versus <code>Router::layer</code>.</li>
+    <li>The difference between <code>layer</code> and <code>route_layer</code>, including fallback behavior.</li>
+    <li>Reaching for ready-made middleware from <code>tower-http</code>.</li>
+  </ul>
+</section>
+
+<section id="example">
+  <h2>The Example</h2>
+  <p>One file, three small middleware functions, and two routes. It demonstrates logging, response
+  headers, authentication that short-circuits, request extensions, shared state, ordering, and
+  per-route middleware.</p>
+  <p class="src">src/main.rs (complete, 124 lines)</p>
+  <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">use std::{
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
+
+use axum::{
+    extract::{Extension, Request, State},
+    http::{header, HeaderValue, StatusCode},
+    middleware::{self, Next},
+    response::Response,
+    routing::get,
+    Router,
+};
+use tower::ServiceBuilder;
+
+#[derive(Clone)]
+struct AppState {
+    name: &amp;'static str,
+    hits: Arc&lt;AtomicU64&gt;,
+}
+
+#[derive(Clone)]
+struct CurrentUser {
+    name: String,
+}
+
+async fn log_and_time(req: Request, next: Next) -&gt; Response {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let start = Instant::now();
+
+    let mut response = next.run(req).await;
+
+    let ms = start.elapsed().as_secs_f64() * 1000.0;
+    response
+        .headers_mut()
+        .insert("x-response-time", format!("{ms:.1}ms").parse::&lt;HeaderValue&gt;().unwrap());
+    println!("{method} {uri} -&gt; {} ({ms:.1} ms)", response.status());
+
+    response
+}
+
+async fn require_token(mut req: Request, next: Next) -&gt; Result&lt;Response, StatusCode&gt; {
+    let token = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+
+    match token {
+        Some("Bearer secret") =&gt; {
+            req.extensions_mut().insert(CurrentUser {
+                name: "Ada".to_string(),
+            });
+            Ok(next.run(req).await)
+        }
+        _ =&gt; Err(StatusCode::UNAUTHORIZED),
+    }
+}
+
+async fn count_requests(State(state): State&lt;AppState&gt;, req: Request, next: Next) -&gt; Response {
+    let n = state.hits.fetch_add(1, Ordering::Relaxed) + 1;
+
+    let mut response = next.run(req).await;
+    response.headers_mut().insert(
+        "x-request-number",
+        n.to_string().parse::&lt;HeaderValue&gt;().unwrap(),
+    );
+    response
+}
+
+async fn home() -&gt; &amp;'static str {
+    "public page: no token needed\n"
+}
+
+async fn health(State(state): State&lt;AppState&gt;) -&gt; String {
+    format!(
+        "{} is ok ({} requests so far)\n",
+        state.name,
+        state.hits.load(Ordering::Relaxed)
+    )
+}
+
+async fn dashboard(Extension(user): Extension&lt;CurrentUser&gt;) -&gt; String {
+    format!("private page: welcome, {}\n", user.name)
+}
+
+fn app(state: AppState) -&gt; Router {
+    let protected = Router::&lt;AppState&gt;::new()
+        .route("/dashboard", get(dashboard))
+        .route_layer(middleware::from_fn(require_token));
+
+    Router::&lt;AppState&gt;::new()
+        .route("/", get(home))
+        .route("/health", get(health))
+        .merge(protected)
+        .layer(
+            ServiceBuilder::new()
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    count_requests,
+                ))
+                .layer(middleware::from_fn(log_and_time)),
+        )
+        .with_state(state)
+}
+
+#[tokio::main]
+async fn main() {
+    let state = AppState {
+        name: "middleware-demo",
+        hits: Arc::new(AtomicU64::new(0)),
+    };
+
+    let app = app(state);
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+
+    println!("listening on http://{addr}");
+    axum::serve(listener, app).await.unwrap();
+}</code></pre></div>
+</section>
+
+<section id="what-is-middleware">
+  <h2>1. What middleware is</h2>
+  <p>Middleware is code that wraps request handling. It runs <em>before</em> the handler, can inspect
+  or change the request, can call the handler, and can inspect or change the response on the way
+  back out.</p>
+  <p>Why it matters: logging, authentication, CORS, compression, timeouts, and rate limiting are
+  cross-cutting concerns. They do not belong to any single handler. Middleware lets you write them
+  once and apply them to one route, a group of routes, or the whole application.</p>
+  <div class="callout">
+    <p><strong>Why "handler" and not just "function"?</strong> "Function" names the language
+    construct; "handler" names the role. A handler is the function that produces the response for a
+    matched route, and axum requires the handler-compatible signature (extractors in,
+    <code>IntoResponse</code> out). Middleware is also written as a function, but it receives
+    <code>Next</code> and wraps the chain, so we call it middleware rather than a handler.</p>
+  </div>
+  <div class="callout">
+    <p><strong>Other names for middleware.</strong> Frameworks use different words:
+    <em>filter</em> (Java servlets, ASP.NET), <em>interceptor</em> (gRPC, Angular, NestJS),
+    <em>hook</em> or <em>plugin</em> (broader extension points), <em>aspect</em> (AOP), and
+    <em>layer</em> (tower, where it strictly means the wrapper factory). The contract differs, but
+    the idea is the same: code that wraps or extends request handling.</p>
+  </div>
+  
+<figure>
+  <svg class="dg" viewBox="0 0 760 440" role="img"
+       aria-label="Onion diagram: count_requests wraps log_and_time, which wraps require_token, which wraps the handler. The request travels inward through next.run, and the response returns outward">
+    <defs>
+      <marker id="ah1" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 Z"></path>
+      </marker>
+    </defs>
+
+    <rect x="40" y="50" width="560" height="320" rx="24" class="onion-1"></rect>
+    <text x="70" y="80" class="t-head">count_requests</text>
+
+    <rect x="80" y="90" width="480" height="240" rx="20" class="onion-2"></rect>
+    <text x="110" y="120" class="t-head">log_and_time</text>
+
+    <rect x="120" y="130" width="400" height="160" rx="16" class="onion-3"></rect>
+    <text x="150" y="152" class="t-head">require_token</text>
+
+    <rect x="190" y="175" width="260" height="70" rx="12" class="onion-core"></rect>
+    <text x="320" y="207" text-anchor="middle" class="t-head">handler</text>
+    <text x="320" y="224" text-anchor="middle" class="t-muted">does the work</text>
+
+    <!-- Request: each layer calls next.run(req) to enter the next layer. -->
+    <text x="250" y="18" text-anchor="middle" class="t-muted">request</text>
+    <line x1="250" y1="26" x2="250" y2="210" class="arrow" marker-end="url(#ah1)"></line>
+    <text x="262" y="66" class="t-mono">pre</text>
+    <text x="262" y="80" class="t-mono">next.run(req)</text>
+    <text x="262" y="106" class="t-mono">pre</text>
+    <text x="262" y="120" class="t-mono">next.run(req)</text>
+    <text x="262" y="146" class="t-mono">pre</text>
+    <text x="262" y="160" class="t-mono">next.run(req)</text>
+
+    <!-- Response: the code after each next.run() runs on the way back out. -->
+    <text x="390" y="18" text-anchor="middle" class="t-muted">response</text>
+    <line x1="390" y1="210" x2="390" y2="26" class="arrow" marker-end="url(#ah1)"></line>
+    <text x="402" y="80" class="t-mono">post</text>
+    <text x="402" y="120" class="t-mono">post</text>
+    <text x="402" y="160" class="t-mono">post</text>
+
+    <text x="40" y="400" class="t-muted">pre-processing = code before next.run(req)</text>
+    <text x="40" y="420" class="t-muted">post-processing = code after next.run(req) returns</text>
+  </svg>
+  <figcaption>Think of the layers as an onion. The request enters the outermost layer, and each
+  middleware calls <code>next.run(req)</code> to reach the next layer. After the handler returns,
+  each middleware's post-processing runs on the way back out. <code>require_token</code> is attached
+  with <code>route_layer</code>, so that ring exists only for protected routes.</figcaption>
+</figure>
+
+  <p>The example composes three middleware functions. Two wrap the whole router, and one wraps only
+  the protected route:</p>
+  <p class="src">src/main.rs:91–109</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">fn app(state: AppState) -&gt; Router {
+    let protected = Router::&lt;AppState&gt;::new()
+        .route("/dashboard", get(dashboard))
+        .route_layer(middleware::from_fn(require_token));
+
+    Router::&lt;AppState&gt;::new()
+        .route("/", get(home))
+        .route("/health", get(health))
+        .merge(protected)
+<mark>        .layer(</mark>
+<mark>            ServiceBuilder::new()</mark>
+<mark>                .layer(middleware::from_fn_with_state(</mark>
+<mark>                    state.clone(),</mark>
+<mark>                    count_requests,</mark>
+<mark>                ))</mark>
+<mark>                .layer(middleware::from_fn(log_and_time)),</mark>
+<mark>        )</mark>
+        .with_state(state)
+}</code></pre></div>
+  <ul>
+    <li><code>count_requests</code> and <code>log_and_time</code> are applied with
+    <code>.layer(...)</code>, so they see every request, including unmatched paths.</li>
+    <li><code>require_token</code> is applied with <code>.route_layer(...)</code> on the protected
+    router, so it only runs for <code>/dashboard</code>.</li>
+    <li>A layer can call the handler (by calling <code>next.run</code>) or stop the request by
+    returning a response itself. Both patterns are used here.</li>
+  </ul>
+</section>
+
+<section id="tower-service-layer">
+  <h2>2. tower's Service and Layer</h2>
+  <p>Axum does not define its own middleware trait. It reuses <strong>tower</strong>, the same
+  abstraction used by hyper, tonic, and many other Rust networking libraries. Two traits explain
+  almost everything:</p>
+  <ul>
+    <li>A <code>Service&lt;Req&gt;</code> is something you can call with a request. It produces a
+    response (asynchronously).</li>
+    <li>A <code>Layer&lt;Inner&gt;</code> is a factory that wraps an inner <code>Service</code> and
+    returns a new <code>Service</code>.</li>
+  </ul>
+  <p class="src">Simplified mental model (not the real trait definitions)</p>
+  <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">// Simplified mental model, not the real trait definitions.
+trait Service&lt;Req&gt; {
+    type Response;
+    async fn call(&amp;mut self, req: Req) -&gt; Self::Response;
+}
+
+trait Layer&lt;Inner&gt; {
+    type Service;
+    fn layer(&amp;self, inner: Inner) -&gt; Self::Service;
+}</code></pre></div>
+  <p>Axum's <code>Router</code> is itself a <code>Service</code>. Calling
+  <code>Router::layer(layer)</code> is essentially <code>layer.layer(router)</code>: the layer wraps
+  the router and every route inside it.</p>
+  
+<figure>
+  <svg class="dg" viewBox="0 0 720 260" role="img"
+       aria-label="A Layer wraps an inner Service, adding work before and after the inner call">
+    <defs>
+      <marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 Z" ></path>
+      </marker>
+    </defs>
+    <text x="10" y="22" class="t-head">A Layer wraps another Service</text>
+
+    <rect x="150" y="45" width="540" height="165" rx="12" class="box-accent"></rect>
+    <text x="420" y="68" text-anchor="middle" class="t-head">MyService (produced by MyLayer)</text>
+
+    <rect x="210" y="95" width="420" height="60" rx="8" class="box"></rect>
+    <text x="420" y="120" text-anchor="middle" class="t-head">inner Service</text>
+    <text x="420" y="139" text-anchor="middle" class="t-muted">e.g. the Router, or the rest of the chain</text>
+
+    <text x="168" y="105" class="t-mono">pre</text>
+    <text x="660" y="105" class="t-mono">post</text>
+
+    <line x1="20" y1="125" x2="146" y2="125" class="arrow" marker-end="url(#ah2)"></line>
+    <text x="83" y="117" text-anchor="middle" class="t-muted">req</text>
+
+    <line x1="150" y1="125" x2="208" y2="125" class="arrow" marker-end="url(#ah2)"></line>
+    <line x1="630" y1="125" x2="692" y2="125" class="arrow" marker-end="url(#ah2)"></line>
+    <text x="704" y="117" text-anchor="middle" class="t-muted">res</text>
+
+    <text x="420" y="190" text-anchor="middle" class="t-mono">call(req) : pre-work, inner.call(req), post-work</text>
+  </svg>
+  <figcaption>The outer Service runs pre-processing, delegates to the inner Service, then post-processes the response.</figcaption>
+</figure>
+
+  <p><code>middleware::from_fn</code> is an adapter. It turns an ordinary async function into a
+  <code>Layer</code>, so you get the ergonomics of a function without implementing
+  <code>Service</code> and <code>Layer</code> by hand. The function receives the request and a
+  <code>Next</code> value that represents the rest of the chain. When you need full control, such as
+  capturing configuration or implementing <code>poll_ready</code>, implement
+  <code>tower::Layer</code> and <code>Service</code> directly; the same composition rules apply.</p>
+  <p class="src">src/main.rs:31–45</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">async fn log_and_time(req: Request, next: Next) -&gt; Response {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let start = Instant::now();
+
+<mark>    let mut response = next.run(req).await;</mark>
+
+    let ms = start.elapsed().as_secs_f64() * 1000.0;
+    response
+        .headers_mut()
+        .insert("x-response-time", format!("{ms:.1}ms").parse::&lt;HeaderValue&gt;().unwrap());
+    println!("{method} {uri} -&gt; {} ({ms:.1} ms)", response.status());
+
+<mark>    response</mark>
+}</code></pre></div>
+  <p>Lines 36 and 44 are the entire idea: work before <code>next.run</code>, work after it. Any
+  tower middleware can be attached the same way, which is why axum applications can reuse the whole
+  tower ecosystem.</p>
+</section>
+
+<section id="from-fn-next">
+  <h2>3. from_fn and Next</h2>
+  <p><code>middleware::from_fn</code> turns an async function into middleware. The function's
+  signature is strict, because axum must know which arguments are extractors and which one is the
+  remainder of the chain.</p>
+  <p class="src">src/main.rs:31–45</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust"><mark>async fn log_and_time(req: Request, next: Next) -&gt; Response {</mark>
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let start = Instant::now();
+
+<mark>    let mut response = next.run(req).await;</mark>
+
+    let ms = start.elapsed().as_secs_f64() * 1000.0;
+    response
+        .headers_mut()
+        .insert("x-response-time", format!("{ms:.1}ms").parse::&lt;HeaderValue&gt;().unwrap());
+    println!("{method} {uri} -&gt; {} ({ms:.1} ms)", response.status());
+
+<mark>    response</mark>
+}</code></pre></div>
+  <ul>
+    <li>Zero or more <code>FromRequestParts</code> extractors come first (for example
+    <code>HeaderMap</code> or <code>State</code>).</li>
+    <li>Exactly one <code>FromRequest</code> extractor comes second-to-last. This is usually the
+    whole <code>Request</code>.</li>
+    <li><code>Next</code> is always last.</li>
+    <li>The return type must implement <code>IntoResponse</code>, so <code>Response</code>,
+    <code>Result&lt;Response, StatusCode&gt;</code>, and many other types work.</li>
+  </ul>
+  <p><code>next.run(req).await</code> is the only way to continue inward. If you never call it, the
+  handler and any inner middleware never run. <code>Next</code> is not <code>Clone</code>, so call it
+  once, and make sure every code path either returns early or calls it.</p>
+</section>
+
+<section id="request-response">
+  <h2>4. Reading and changing the request and response</h2>
+  <p>Most observability and header-injection middleware has the same shape: capture some facts about
+  the request, run the rest of the chain, then decorate the response.</p>
+  <p class="src">src/main.rs:31–45</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">async fn log_and_time(req: Request, next: Next) -&gt; Response {
+<mark>    let method = req.method().clone();</mark>
+<mark>    let uri = req.uri().clone();</mark>
+    let start = Instant::now();
+
+    let mut response = next.run(req).await;
+
+    let ms = start.elapsed().as_secs_f64() * 1000.0;
+<mark>    response</mark>
+<mark>        .headers_mut()</mark>
+<mark>        .insert("x-response-time", format!("{ms:.1}ms").parse::&lt;HeaderValue&gt;().unwrap());</mark>
+    println!("{method} {uri} -&gt; {} ({ms:.1} ms)", response.status());
+
+    response
+}</code></pre></div>
+  <ul>
+    <li><code>req.method()</code>, <code>req.uri()</code>, and <code>req.headers()</code> give
+    read-only access. Clone small values such as <code>Method</code> and <code>Uri</code> if you need
+    them after the request moves on.</li>
+    <li>Take <code>mut req</code> only when you need to mutate it, for example to insert an
+    extension.</li>
+    <li>Take <code>mut response</code> to change its status, headers, or body before returning it.</li>
+    <li>Header insertion is the most common response change. Use <code>headers_mut().insert(...)</code>
+    with a parsed <code>HeaderValue</code>.</li>
+  </ul>
+  <div class="callout">
+    <p><strong>Body warning:</strong> a request body is a stream and can be consumed only once. If
+    your middleware reads it to completion, the handler will see an empty body. Buffer it and rebuild
+    the request, or avoid consuming it, unless replacing the body is the goal.</p>
+  </div>
+</section>
+
+<section id="short-circuit">
+  <h2>5. Short-circuiting a request</h2>
+  <p>A middleware function does not have to call the handler. It can return a response immediately.
+  That is how authentication, authorization, rate limiting, and validation reject requests before
+  expensive work happens.</p>
+  
+<figure>
+  <svg class="dg" viewBox="0 0 720 290" role="img"
+       aria-label="Auth middleware either short-circuits with 401 or inserts the user and calls next">
+    <defs>
+      <marker id="ah3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 Z" ></path>
+      </marker>
+    </defs>
+
+    <rect x="10" y="110" width="80" height="50" rx="8" class="box"></rect>
+    <text x="50" y="140" text-anchor="middle" class="t-head">Request</text>
+
+    <polygon points="220,80 340,135 220,190 100,135" class="box-accent"></polygon>
+    <text x="220" y="131" text-anchor="middle" class="t-head">valid token?</text>
+    <text x="220" y="149" text-anchor="middle" class="t-muted">Authorization header</text>
+
+    <line x1="90" y1="135" x2="98" y2="135" class="arrow" marker-end="url(#ah3)"></line>
+
+    <rect x="390" y="30" width="300" height="52" rx="8" class="box-ok"></rect>
+    <text x="540" y="54" text-anchor="middle" class="t-head">insert CurrentUser</text>
+    <text x="540" y="71" text-anchor="middle" class="t-muted">req.extensions_mut()</text>
+
+    <rect x="390" y="105" width="300" height="52" rx="8" class="box"></rect>
+    <text x="540" y="129" text-anchor="middle" class="t-head">next.run(req).await</text>
+    <text x="540" y="146" text-anchor="middle" class="t-muted">handler runs, response returns</text>
+
+    <rect x="390" y="205" width="300" height="52" rx="8" class="box-bad"></rect>
+    <text x="540" y="229" text-anchor="middle" class="t-head">return 401 Unauthorized</text>
+    <text x="540" y="246" text-anchor="middle" class="t-muted">handler is never called</text>
+
+    <line x1="340" y1="120" x2="388" y2="60" class="arrow" marker-end="url(#ah3)"></line>
+    <text x="352" y="83" class="t-muted">yes</text>
+
+    <line x1="340" y1="150" x2="388" y2="225" class="arrow" marker-end="url(#ah3)"></line>
+    <text x="352" y="213" class="t-muted">no</text>
+
+    <line x1="540" y1="82" x2="540" y2="103" class="arrow" marker-end="url(#ah3)"></line>
+    <text x="560" y="98" class="t-muted">then</text>
+  </svg>
+  <figcaption>Authentication either rejects the request or enriches it and continues.</figcaption>
+</figure>
+
+  <p class="src">src/main.rs:47–62</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">async fn require_token(mut req: Request, next: Next) -&gt; Result&lt;Response, StatusCode&gt; {
+    let token = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+
+<mark>    match token {</mark>
+<mark>        Some("Bearer secret") =&gt; {</mark>
+<mark>            req.extensions_mut().insert(CurrentUser {</mark>
+<mark>                name: "Ada".to_string(),</mark>
+<mark>            });</mark>
+<mark>            Ok(next.run(req).await)</mark>
+<mark>        }</mark>
+<mark>        _ =&gt; Err(StatusCode::UNAUTHORIZED),</mark>
+    }
+}</code></pre></div>
+  <ul>
+    <li>The success path inserts the user and calls <code>next.run(req).await</code>.</li>
+    <li>The failure path returns <code>Err(StatusCode::UNAUTHORIZED)</code> without calling
+    <code>next</code>. The handler is skipped entirely.</li>
+    <li>Returning <code>Result&lt;Response, StatusCode&gt;</code> works because both variants
+    implement <code>IntoResponse</code>. Returning a plain <code>Response</code> is equally valid.</li>
+    <li>Outer middleware still sees the rejection response. That is why the <code>401</code> in the
+    example still carries <code>x-response-time</code> and <code>x-request-number</code>: it bubbles
+    back out through the outer layers.</li>
+  </ul>
+  <div class="callout">
+    <p>Prefer returning a status code or an error response over panicking. A panic in middleware can
+    abort the connection instead of producing a clean HTTP response.</p>
+    <p>The hardcoded <code>Bearer secret</code> is for demonstration only. Real authentication should
+    verify signed tokens, expiry, and scopes instead of comparing a literal string.</p>
+  </div>
+</section>
+
+<section id="extensions">
+  <h2>6. Passing data with request extensions</h2>
+  <p>Extensions are a typed, per-request map stored on the request. A middleware inserts a value;
+  a handler extracts it by type. This is how the auth middleware tells the dashboard handler who the
+  user is without putting user data in a global.</p>
+  <p class="src">src/main.rs:47–62 (insert)</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">async fn require_token(mut req: Request, next: Next) -&gt; Result&lt;Response, StatusCode&gt; {
+    let token = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+
+    match token {
+        Some("Bearer secret") =&gt; {
+<mark>            req.extensions_mut().insert(CurrentUser {</mark>
+<mark>                name: "Ada".to_string(),</mark>
+<mark>            });</mark>
+            Ok(next.run(req).await)
+        }
+        _ =&gt; Err(StatusCode::UNAUTHORIZED),
+    }
+}</code></pre></div>
+  <p class="src">src/main.rs:87–89 (extract)</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust"><mark>async fn dashboard(Extension(user): Extension&lt;CurrentUser&gt;) -&gt; String {</mark>
+    format!("private page: welcome, {}\n", user.name)
+}</code></pre></div>
+  <ul>
+    <li>Insert before calling <code>next.run</code>; the handler can only extract what is already
+    there.</li>
+    <li>The type is the key. <code>Extension&lt;CurrentUser&gt;</code> retrieves exactly the value
+    inserted as <code>CurrentUser</code>.</li>
+    <li>The value must be <code>Clone + Send + Sync + 'static</code>, because extensions may be
+    cloned across the async machinery.</li>
+    <li>Extensions live for one request only. For data shared across requests, use router state
+    (next section).</li>
+  </ul>
+  <div class="callout">
+    <p><strong>Missing extension:</strong> <code>Extension&lt;T&gt;</code> rejects with a
+    <code>500 Internal Server Error</code> if nothing was inserted, which usually means the middleware
+    did not run. If the value is optional, extract <code>Option&lt;Extension&lt;T&gt;&gt;</code>
+    instead.</p>
+  </div>
+</section>
+
+<section id="state">
+  <h2>7. Shared state in middleware</h2>
+  <p><code>middleware::from_fn</code> cannot extract <code>State</code>. When a middleware needs the
+  application state, build it with <code>middleware::from_fn_with_state</code>. It captures a clone
+  of the state when the layer is constructed, then provides it to the <code>State</code> extractor
+  on every request.</p>
+  <p class="src">src/main.rs:20–29 (state type)</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust"><mark>#[derive(Clone)]</mark>
+<mark>struct AppState {</mark>
+<mark>    name: &amp;'static str,</mark>
+<mark>    hits: Arc&lt;AtomicU64&gt;,</mark>
+}
+
+#[derive(Clone)]
+struct CurrentUser {
+    name: String,
+}</code></pre></div>
+  <p class="src">src/main.rs:64–73 (middleware)</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust"><mark>async fn count_requests(State(state): State&lt;AppState&gt;, req: Request, next: Next) -&gt; Response {</mark>
+<mark>    let n = state.hits.fetch_add(1, Ordering::Relaxed) + 1;</mark>
+
+    let mut response = next.run(req).await;
+    response.headers_mut().insert(
+        "x-request-number",
+        n.to_string().parse::&lt;HeaderValue&gt;().unwrap(),
+    );
+    response
+}</code></pre></div>
+  <p class="src">src/main.rs:100–107 (wiring)</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">        .layer(
+<mark>            ServiceBuilder::new()</mark>
+<mark>                .layer(middleware::from_fn_with_state(</mark>
+<mark>                    state.clone(),</mark>
+<mark>                    count_requests,</mark>
+<mark>                ))</mark>
+                .layer(middleware::from_fn(log_and_time)),
+        )</code></pre></div>
+  <ul>
+    <li>The extractor order is <code>State&lt;AppState&gt;</code>, then <code>Request</code>, then
+    <code>Next</code>. All but the request extractor must be <code>FromRequestParts</code>.</li>
+    <li>The state type must be <code>Clone</code>. Keep large or mutable data behind
+    <code>Arc</code>; in the example the counter is an <code>Arc&lt;AtomicU64&gt;</code>, so clones
+    are cheap and updates are shared.</li>
+    <li><code>state.clone()</code> happens once when building the layer, not once per request. The
+    handler's <code>State</code> extractor still clones the state value per request, which is another
+    reason to keep it cheap.</li>
+    <li>Use <code>from_fn_with_state</code> rather than reaching for a global. It keeps dependencies
+    explicit and testable.</li>
+  </ul>
+</section>
+
+<section id="ordering">
+  <h2>8. Layer ordering</h2>
+  <p>Layers wrap each other like an onion. The <strong>outermost</strong> layer runs first on the
+  request and last on the response. The only question is which layer ends up outermost.</p>
+  
+<figure>
+  <svg class="dg" viewBox="0 0 760 300" role="img"
+       aria-label="ServiceBuilder runs layers top to bottom; repeated Router layer calls make the last one outermost">
+    <defs>
+      <marker id="ah4" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 Z"></path>
+      </marker>
+    </defs>
+
+    <text x="190" y="20" text-anchor="middle" class="t-head">ServiceBuilder</text>
+    <text x="570" y="20" text-anchor="middle" class="t-head">Repeated .layer()</text>
+
+    <rect x="90" y="40" width="200" height="44" rx="8" class="box-accent"></rect>
+    <text x="190" y="67" text-anchor="middle" class="t-head">count_requests</text>
+    <text x="300" y="67" class="t-muted">outermost</text>
+
+    <rect x="90" y="100" width="200" height="44" rx="8" class="box-accent"></rect>
+    <text x="190" y="127" text-anchor="middle" class="t-head">log_and_time</text>
+
+    <rect x="90" y="160" width="200" height="44" rx="8" class="box"></rect>
+    <text x="190" y="187" text-anchor="middle" class="t-head">handler</text>
+
+    <line x1="190" y1="30" x2="190" y2="38" class="arrow" marker-end="url(#ah4)"></line>
+    <line x1="190" y1="84" x2="190" y2="98" class="arrow" marker-end="url(#ah4)"></line>
+    <line x1="190" y1="144" x2="190" y2="158" class="arrow" marker-end="url(#ah4)"></line>
+    <line x1="190" y1="204" x2="190" y2="230" class="arrow" marker-end="url(#ah4)"></line>
+    <text x="190" y="250" text-anchor="middle" class="t-muted">request flows down; response flows up</text>
+
+    <rect x="470" y="40" width="200" height="44" rx="8" class="box-accent"></rect>
+    <text x="570" y="67" text-anchor="middle" class="t-head">log_and_time</text>
+    <text x="680" y="67" class="t-muted">outermost</text>
+
+    <rect x="470" y="100" width="200" height="44" rx="8" class="box-accent"></rect>
+    <text x="570" y="127" text-anchor="middle" class="t-head">count_requests</text>
+
+    <rect x="470" y="160" width="200" height="44" rx="8" class="box"></rect>
+    <text x="570" y="187" text-anchor="middle" class="t-head">handler</text>
+
+    <line x1="570" y1="30" x2="570" y2="38" class="arrow" marker-end="url(#ah4)"></line>
+    <line x1="570" y1="84" x2="570" y2="98" class="arrow" marker-end="url(#ah4)"></line>
+    <line x1="570" y1="144" x2="570" y2="158" class="arrow" marker-end="url(#ah4)"></line>
+    <line x1="570" y1="204" x2="570" y2="230" class="arrow" marker-end="url(#ah4)"></line>
+    <text x="570" y="250" text-anchor="middle" class="t-muted">request flows down; response flows up</text>
+  </svg>
+  <figcaption>With <code>ServiceBuilder</code>, the first layer listed is outermost. With repeated
+  <code>.layer(...)</code> calls, the last call wraps everything before it and becomes outermost.</figcaption>
+</figure>
+
+  <table>
+    <thead>
+      <tr>
+        <th>How you write it</th>
+        <th>Outermost layer</th>
+        <th>Request path</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>ServiceBuilder::new()<br>.layer(count_requests)<br>.layer(log_and_time)</code></td>
+        <td><code>count_requests</code></td>
+        <td><code>count_requests</code> → <code>log_and_time</code> → handler</td>
+      </tr>
+      <tr>
+        <td><code>Router::new()<br>.layer(count_requests)<br>.layer(log_and_time)</code></td>
+        <td><code>log_and_time</code></td>
+        <td><code>log_and_time</code> → <code>count_requests</code> → handler</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>The response always takes the reverse path, so the outermost layer is also the last one to
+  touch the response. In the first row the response is handler → <code>log_and_time</code> →
+  <code>count_requests</code>; in the second row it is handler → <code>count_requests</code> →
+  <code>log_and_time</code>.</p>
+  <p>Why the difference? <code>ServiceBuilder</code> treats its layers as one ordered list: first
+  added means outermost. A separate <code>.layer(...)</code> call wraps the router that already
+  includes the earlier layers, so the last call becomes the new outermost wrapper.</p>
+  <p>The comparison is not <code>Router::new()</code> versus <code>ServiceBuilder::new()</code>; the
+  two are normally used together, as in the example. The difference is whether the layers are
+  combined into one composed layer by <code>ServiceBuilder</code> or applied one at a time by
+  repeated <code>Router::layer</code> calls.</p>
+  <div class="callout">
+    <p><strong>Rule of thumb:</strong> read <code>ServiceBuilder</code> top-to-bottom; read repeated
+    <code>.layer(...)</code> calls bottom-to-top. That is the order the request follows.</p>
+  </div>
+  <p class="src">src/main.rs:100–107</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">        .layer(
+<mark>            ServiceBuilder::new()</mark>
+<mark>                .layer(middleware::from_fn_with_state(</mark>
+<mark>                    state.clone(),</mark>
+<mark>                    count_requests,</mark>
+<mark>                ))</mark>
+<mark>                .layer(middleware::from_fn(log_and_time)),</mark>
+        )</code></pre></div>
+  <p>The example uses <code>ServiceBuilder</code>, so <code>count_requests</code> is outermost:
+  request → <code>count_requests</code> → <code>log_and_time</code> → <code>require_token</code>
+  (only on <code>/dashboard</code>) → handler. The response travels back in reverse.</p>
+</section>
+
+<section id="layer-vs-route-layer">
+  <h2>9. layer versus route_layer</h2>
+  <p>Authentication usually belongs on some routes, not all of them. <code>route_layer</code> applies
+  middleware only when a route in that router matches. <code>layer</code> applies to everything the
+  router serves, including the fallback that produces <code>404</code> responses.</p>
+  <p class="src">src/main.rs:91–109</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">fn app(state: AppState) -&gt; Router {
+    let protected = Router::&lt;AppState&gt;::new()
+        .route("/dashboard", get(dashboard))
+<mark>        .route_layer(middleware::from_fn(require_token));</mark>
+
+    Router::&lt;AppState&gt;::new()
+        .route("/", get(home))
+        .route("/health", get(health))
+        .merge(protected)
+<mark>        .layer(</mark>
+            ServiceBuilder::new()
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    count_requests,
+                ))
+                .layer(middleware::from_fn(log_and_time)),
+        )
+        .with_state(state)
+}</code></pre></div>
+  <table>
+    <thead>
+      <tr><th>Method</th><th>Applies to</th><th>Runs on a 404?</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>.layer(...)</code></td><td>All routes and the fallback</td><td>Yes</td></tr>
+      <tr><td><code>.route_layer(...)</code></td><td>Only routes registered in that router</td><td>No</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>The protected router is built separately and merged, so <code>require_token</code> guards
+    only <code>/dashboard</code>. The <code>Router::&lt;AppState&gt;::new()</code> annotation keeps
+    both routers on the same state type so they can be merged.</li>
+    <li>The outer <code>.layer(...)</code> call wraps the merged router, so logging and counting
+    cover public routes, protected routes, and unmatched paths.</li>
+    <li>This is why <code>/missing</code> in the example still receives
+    <code>x-request-number</code> and <code>x-response-time</code> headers.</li>
+    <li><code>route_layer</code> is not a way to add middleware for the fallback. If you need
+    fallback-only behavior, configure the fallback explicitly or use <code>layer</code>.</li>
+  </ul>
+</section>
+
+<section id="ecosystem">
+  <h2>10. Built-in middleware: tower-http</h2>
+  <p>You rarely need to write logging, timeouts, CORS, compression, or request IDs from scratch.
+  <code>tower-http</code> provides production-ready layers that plug into the same
+  <code>ServiceBuilder</code>.</p>
+  <p class="src">Optional add-on to src/main.rs (not part of the runnable example)</p>
+  <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">use std::time::Duration;
+use tower_http::{timeout::TimeoutLayer, trace::TraceLayer};
+
+// Add these layers to the router from the main example.
+let app = Router::new()
+    .route("/", get(home))
+    .layer(
+        ServiceBuilder::new()
+            // Outermost: one span / log line per request.
+            .layer(TraceLayer::new_for_http())
+            // Inner: abort slow handlers with 408 Request Timeout.
+            .layer(TimeoutLayer::with_status_code(
+                StatusCode::REQUEST_TIMEOUT,
+                Duration::from_secs(5),
+            )),
+    );</code></pre></div>
+  <p>Add the crate and enable only the features you use:</p>
+  <p class="src">Add the dependency</p>
+  <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-bash">cargo add tower-http@0.7 --features trace,timeout,cors</code></pre></div>
+  <ul>
+    <li><code>TraceLayer</code> emits a tracing span per request. Install a
+    <code>tracing-subscriber</code> to see the output.</li>
+    <li><code>TimeoutLayer</code> aborts requests that exceed a duration. The example uses
+    <code>with_status_code</code> to return <code>408 Request Timeout</code> explicitly.</li>
+    <li><code>CorsLayer</code>, <code>CompressionLayer</code>, <code>RequestIdLayer</code>,
+    <code>SetRequestIdLayer</code>, and others cover common HTTP concerns.</li>
+    <li>Order matters here too: tracing is usually outermost, timeouts apply to the work inside, and
+    CORS is often placed so that error responses still carry the CORS headers.</li>
+  </ul>
+</section>
+
+<section id="pitfalls">
+  <h2>Common Pitfalls</h2>
+  <div class="pitfall"><strong>Forgetting to call <code>next.run</code>.</strong> If you neither
+  return early on purpose nor call <code>next</code>, the handler silently never runs. Every path
+  should be deliberate.</div>
+  <div class="pitfall"><strong>Using <code>from_fn</code> with <code>State</code>.</strong>
+  <code>from_fn</code> does not extract router state. Use <code>from_fn_with_state</code>, or extract
+  the state from request extensions instead.</div>
+  <div class="pitfall"><strong>Putting extractors in the wrong order.</strong> The whole
+  <code>Request</code> must be second-to-last and <code>Next</code> must be last. Anything before the
+  request must be a <code>FromRequestParts</code> extractor.</div>
+  <div class="pitfall"><strong>Assuming <code>Router::layer</code> runs top to bottom.</strong> With
+  repeated <code>.layer(a).layer(b)</code> calls, <code>b</code> wraps <code>a</code>. Use
+  <code>ServiceBuilder</code> when you want the source order to match the request order.</div>
+  <div class="pitfall"><strong>Using <code>layer</code> for auth and wondering why public routes are
+  protected.</strong> Use <code>route_layer</code> on a router that contains only the protected
+  routes.</div>
+  <div class="pitfall"><strong>Expecting <code>route_layer</code> to run for 404s.</strong> It only
+  runs when a route matches. Use <code>layer</code>, or an explicit fallback, if you need
+  unmatched requests covered.</div>
+  <div class="pitfall"><strong>Forgetting the extension value.</strong> A missing
+  <code>Extension&lt;T&gt;</code> produces a <code>500</code>, not a <code>404</code>. Make sure the
+  middleware that inserts the value actually ran, or use
+  <code>Option&lt;Extension&lt;T&gt;&gt;</code>.</div>
+  <div class="pitfall"><strong>Consuming the request body.</strong> Reading the body in middleware
+  leaves nothing for the handler. Buffer and rebuild the request if you must inspect it.</div>
+  <div class="pitfall"><strong>Blocking inside an async middleware.</strong> Filesystem, CPU-heavy,
+  or synchronous network work blocks the Tokio worker. Use <code>spawn_blocking</code> or an async
+  client.</div>
+</section>
+
+<section id="takeaways">
+  <h2>Key Takeaways</h2>
+  <p>Axum middleware is ordinary async Rust wrapped in tower's <code>Service</code> and
+  <code>Layer</code> abstractions: work before <code>next.run</code>, work after it, or stop the
+  request by returning a response yourself. Choose the composition order deliberately, use
+  <code>route_layer</code> for per-route concerns such as authentication, and use
+  <code>from_fn_with_state</code> plus request extensions to pass context inward. Reach for
+  <code>tower-http</code> before hand-writing the common HTTP concerns.</p>
+</section>
+
+      </main>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/keep-markup/prism-keep-markup.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-rust.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+    <script>
+      // Copy buttons: copy the raw text of the code block, without line numbers.
+      document.querySelectorAll(".code-wrap").forEach(function (wrap) {
+        var btn = wrap.querySelector(".copy");
+        var code = wrap.querySelector("code");
+        if (!btn || !code) return;
+
+        btn.addEventListener("click", function () {
+          var text = code.textContent;
+          var original = btn.textContent;
+
+          function ok() {
+            btn.textContent = "Copied";
+            setTimeout(function () {
+              btn.textContent = original;
+            }, 1500);
+          }
+
+          function fallback() {
+            var ta = document.createElement("textarea");
+            ta.value = text;
+            ta.setAttribute("readonly", "");
+            ta.style.position = "fixed";
+            ta.style.top = "-1000px";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+              document.execCommand("copy");
+              ok();
+            } catch (e) {
+              btn.textContent = "Press Ctrl+C";
+            }
+            document.body.removeChild(ta);
+          }
+
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(ok, fallback);
+          } else {
+            fallback();
+          }
+        });
+      });
+
+      // Theme toggle: respect the OS default until the user chooses.
+      (function () {
+        var root = document.documentElement;
+        var btn = document.getElementById("theme-toggle");
+        var media = window.matchMedia("(prefers-color-scheme: dark)");
+
+        function effective() {
+          return (
+            root.getAttribute("data-theme") || (media.matches ? "dark" : "light")
+          );
+        }
+
+        function apply(theme) {
+          root.setAttribute("data-theme", theme);
+          btn.textContent =
+            theme === "dark" ? "Switch to light" : "Switch to dark";
+        }
+
+        apply(effective());
+
+        btn.addEventListener("click", function () {
+          var next = effective() === "dark" ? "light" : "dark";
+          try {
+            localStorage.setItem("theme", next);
+          } catch (e) {}
+          apply(next);
+        });
+      })();
+    </script>
+  </body>
+</html>
