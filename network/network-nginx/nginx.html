@@ -417,6 +417,55 @@ curl http://localhost:8081/../etc/passwd  <span class="c"># normalized; never es
 
   <div class="prose">
     <p>With <code>root /var/www/hello</code> the request path is appended: <code>/index.html</code> becomes <code>/var/www/hello/index.html</code>. <code>try_files $uri $uri/ =404</code> is the standard guard — serve the literal file, then the directory (which serves <code>index.html</code>), otherwise 404.</p>
+  </div>
+
+  <div class="prose">
+    <h3>How <code>try_files $uri $uri/ =404</code> works</h3>
+    <p><code>try_files</code> takes a list. Every entry except the last is a filesystem candidate, tested in order against <code>root</code> (or <code>alias</code>); the first hit wins and nothing after it is checked. The final entry is the fallback.</p>
+  </div>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Token</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>$uri</code></td><td>The normalized request path, e.g. <code>/style.css</code>, looked up as a <b>regular file</b>.</td></tr>
+        <tr><td><code>$uri/</code></td><td>The same path with a trailing slash. The slash is a flag meaning "test for a directory" — on a hit nginx serves that directory's <code>index</code> file, <code>index.html</code> by default.</td></tr>
+        <tr><td><code>=404</code></td><td>The fallback when nothing matched. The <code>=</code> prefix means "reply with this status code", not "redirect to this URI".</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <p>With <code>root /var/www/hello</code>, two requests walk the list like this:</p>
+  </div>
+  <div class="code"><div class="bar"><span class="fn">try_files, step by step</span><span class="tag">trace</span></div><pre><code>GET /                     <span class="c"># /var/www/hello/ is a directory, not a file</span>
+  $uri    → /var/www/hello/            file?       no
+  $uri/   → /var/www/hello/            directory?  yes → serve index.html
+  <span class="c"># → "hello from a file"</span>
+
+GET /missing              <span class="c"># nothing on disk for this path</span>
+  $uri    → /var/www/hello/missing     file?       no
+  $uri/   → /var/www/hello/missing/    directory?  no
+  =404    → 404 Not Found</code></pre></div>
+
+  <div class="prose">
+    <p>Three details worth internalising:</p>
+    <ul>
+      <li>Candidates are resolved against <code>root</code>, not against the URL. <code>/css/app.css</code> becomes <code>/var/www/hello/css/app.css</code>.</li>
+      <li><code>$uri</code> is already decoded and normalized (<code>%xx</code>, <code>.</code>, <code>..</code> resolved) before <code>try_files</code> runs. That is the other half of why <code>/../etc/passwd</code> never escapes the root.</li>
+      <li>Only <code>=404</code> is a status code. Any other last argument is an <b>internal redirect</b>: <code>try_files $uri $uri/ /index.html</code> for a single-page app, or <code>@app</code> for a named location. That final slot is what you swap later.</li>
+    </ul>
+  </div>
+
+  <div class="callout warn">
+    <p><strong>Distinguish "missing" from "no index".</strong> <code>=404</code> fires only when the path exists as neither file nor directory. A directory that <em>does</em> exist but has no <code>index.html</code> returns <b>403</b> (autoindex is off), and omitting the fallback entirely turns a miss into <b>500</b>.</p>
+  </div>
+
+  <div class="callout">
+    <p><strong>Why keep the line if plain <code>root</code> already 404s?</strong> It makes the file → directory → error decision explicit, and it is the exact hook you extend for SPA routing or a named-location proxy. The shorter config works today but has nowhere to grow.</p>
+  </div>
+
+  <div class="prose">
     <h3>root vs alias — append or replace</h3>
     <p><code>alias</code> replaces the matched location prefix instead of appending it. That is the only difference, and it is easy to see:</p>
   </div>
@@ -529,6 +578,26 @@ server {
 curl -H "Host: alpha.local" http://localhost:8083   <span class="c"># alpha</span>
 curl -H "Host: beta.local"  http://localhost:8083   <span class="c"># default</span>
 curl                        http://localhost:8083   <span class="c"># default</span></code></pre></div>
+
+  <div class="prose">
+    <h3>Opening the vhost in a browser</h3>
+    <p>A browser cannot set <code>Host</code> by hand the way <code>curl -H</code> can, so it must <em>resolve</em> <code>alpha.local</code> first. That is a job for <code>/etc/hosts</code> — and since the file maps names to addresses only, the port stays in the URL.</p>
+  </div>
+  <div class="code"><div class="bar"><span class="fn">shell</span><span class="tag">local DNS</span></div><pre><code>echo '127.0.0.1 alpha.local' | sudo tee -a /etc/hosts
+getent hosts alpha.local        <span class="c"># 127.0.0.1  alpha.local</span></code></pre></div>
+
+  <div class="prose">
+    <p>Now open <b><code>http://alpha.local:8083</code></b>: the browser resolves the name to <code>127.0.0.1</code>, sends <code>Host: alpha.local</code>, and nginx picks the alpha server block. Delete the line to undo it.</p>
+    <p>Two gotchas:</p>
+    <ul>
+      <li><code>.local</code> is reserved for mDNS, so Avahi or macOS may answer before <code>/etc/hosts</code> does. If that happens, switch to the RFC 6761 test name <code>alpha.test</code> — in both the hosts file and <code>server_name</code>.</li>
+      <li>Only names live in <code>/etc/hosts</code>; there is no port field. Omit <code>:8083</code> from the URL and the browser hits whatever listens on <code>:80</code>.</li>
+    </ul>
+  </div>
+
+  <div class="callout">
+    <p><strong>No hosts file needed for a one-off:</strong> <code>curl --resolve alpha.local:8083:127.0.0.1 http://alpha.local:8083/</code> pins the name to an IP for that command only, and Chrome accepts <code>--host-resolver-rules="MAP alpha.local 127.0.0.1"</code>.</p>
+  </div>
 
   <div class="prose">
     <p>The selection order for a given <code>Host</code> is: exact name → longest wildcard (e.g. <code>*.example.com</code>) → first matching regex, in file order → the <code>default_server</code>. A common hardening move is a default server that drops unknown traffic:</p>
