@@ -626,15 +626,16 @@
           <a href="#what-you-learn">What You'll Learn</a>
           <a href="#example">The Example</a>
           <a href="#what-is-middleware">1. What middleware is</a>
-          <a href="#tower-service-layer">2. Service and Layer</a>
-          <a href="#from-fn-next">3. from_fn and Next</a>
-          <a href="#request-response">4. Reading and changing</a>
-          <a href="#short-circuit">5. Short-circuiting</a>
-          <a href="#extensions">6. Request extensions</a>
-          <a href="#state">7. Shared state</a>
-          <a href="#ordering">8. Layer ordering</a>
-          <a href="#layer-vs-route-layer">9. layer vs route_layer</a>
-          <a href="#ecosystem">10. tower-http</a>
+          <a href="#why-middleware">2. Why separate layers</a>
+          <a href="#tower-service-layer">3. Service and Layer</a>
+          <a href="#from-fn-next">4. from_fn and Next</a>
+          <a href="#request-response">5. Reading and changing</a>
+          <a href="#short-circuit">6. Short-circuiting</a>
+          <a href="#extensions">7. Request extensions</a>
+          <a href="#state">8. Shared state</a>
+          <a href="#ordering">9. Layer ordering</a>
+          <a href="#layer-vs-route-layer">10. layer vs route_layer</a>
+          <a href="#ecosystem">11. tower-http</a>
           <a href="#pitfalls">Common Pitfalls</a>
           <a href="#takeaways">Key Takeaways</a>
         </nav>
@@ -693,6 +694,7 @@ x-request-number: 5</code></pre></div>
   <h2>What You'll Learn</h2>
   <ul>
     <li>The onion model: middleware runs before <em>and</em> after the handler.</li>
+    <li>Why separate layers beat one giant middleware for change, testing, and scope.</li>
     <li>How axum reuses tower's <code>Service</code> and <code>Layer</code> traits.</li>
     <li>Writing middleware with <code>middleware::from_fn</code> and <code>Next</code>.</li>
     <li>Reading and rewriting requests and responses.</li>
@@ -939,8 +941,75 @@ async fn main() {
   </ul>
 </section>
 
+<section id="why-middleware">
+  <h2>2. Why separate middleware layers</h2>
+  <p>You could put all of the logic into one large middleware function: count the request, check the
+  token for some paths, start a timer, call the handler, add headers, and print a log line. A single
+  function is easy to start with, but it couples independent concerns together.</p>
+  <table>
+    <thead>
+      <tr><th>Concern</th><th>One giant middleware</th><th>Separate layers</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Ordering</td>
+        <td>Fixed by the line order inside the function.</td>
+        <td>Chosen at the router; layers can be reordered without editing them.</td>
+      </tr>
+      <tr>
+        <td>Scope</td>
+        <td>Runs everywhere, or grows path checks inside.</td>
+        <td>Applied per route or router with <code>route_layer</code>.</td>
+      </tr>
+      <tr>
+        <td>Change</td>
+        <td>Editing one concern can break the others.</td>
+        <td>Each layer has one reason to change.</td>
+      </tr>
+      <tr>
+        <td>Testing</td>
+        <td>Usually needs the whole pipeline.</td>
+        <td>Each layer can be tested with a fake inner service.</td>
+      </tr>
+      <tr>
+        <td>Configuration</td>
+        <td>All settings share one function's context.</td>
+        <td>Each layer owns its own configuration and state.</td>
+      </tr>
+      <tr>
+        <td>Debugging</td>
+        <td>One function; unclear which concern misbehaved.</td>
+        <td>Per-layer logs/spans and a smaller blast radius.</td>
+      </tr>
+      <tr>
+        <td>Reuse</td>
+        <td>Copy-paste into another app.</td>
+        <td>The same layer works in other routers and tower services.</td>
+      </tr>
+      <tr>
+        <td>Performance</td>
+        <td>Every concern runs on every request.</td>
+        <td>Skip layers where they are not needed; fail fast.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>A giant middleware tends to grow flags and branches: <code>if path == "/dashboard"</code>,
+  <code>if header_present</code>, <code>if should_log</code>. Each branch couples two concerns. With
+  separate layers, those decisions live in the router composition, and each function stays focused.</p>
+  <p>In the example, <code>count_requests</code>, <code>log_and_time</code>, and
+  <code>require_token</code> are each small enough to read at a glance. You can remove the counter,
+  swap the logger for <code>TraceLayer</code>, or move authentication to another router without
+  touching the other two. A fused function would hide those boundaries.</p>
+  <div class="callout">
+    <p><strong>When is one function fine?</strong> If the concern is genuinely one thing, is used in
+    one place, and will never be reordered or reused, a single middleware is simpler. The layered
+    approach pays off when concerns are independent, differ per route, or need to be tested and
+    evolved separately.</p>
+  </div>
+</section>
+
 <section id="tower-service-layer">
-  <h2>2. tower's Service and Layer</h2>
+  <h2>3. tower's Service and Layer</h2>
   <p>Axum does not define its own middleware trait. It reuses <strong>tower</strong>, the same
   abstraction used by hyper, tonic, and many other Rust networking libraries. Two traits explain
   almost everything:</p>
@@ -1024,7 +1093,7 @@ trait Layer&lt;Inner&gt; {
 </section>
 
 <section id="from-fn-next">
-  <h2>3. from_fn and Next</h2>
+  <h2>4. from_fn and Next</h2>
   <p><code>middleware::from_fn</code> turns an async function into middleware. The function's
   signature is strict, because axum must know which arguments are extractors and which one is the
   remainder of the chain.</p>
@@ -1053,12 +1122,14 @@ trait Layer&lt;Inner&gt; {
     <code>Result&lt;Response, StatusCode&gt;</code>, and many other types work.</li>
   </ul>
   <p><code>next.run(req).await</code> is the only way to continue inward. If you never call it, the
-  handler and any inner middleware never run. <code>Next</code> is not <code>Clone</code>, so call it
-  once, and make sure every code path either returns early or calls it.</p>
+  handler and any inner middleware never run. <code>Next::run</code> takes <code>self</code>, so treat
+  the handle as one-shot: call it once. (In axum 0.8, <code>Next</code> is in fact
+  <code>Clone</code>, but calling <code>run</code> on two clones would run the rest of the chain
+  twice.) Make sure every code path either returns early or calls it.</p>
 </section>
 
 <section id="request-response">
-  <h2>4. Reading and changing the request and response</h2>
+  <h2>5. Reading and changing the request and response</h2>
   <p>Most observability and header-injection middleware has the same shape: capture some facts about
   the request, run the rest of the chain, then decorate the response.</p>
   <p class="src">src/main.rs:31–45</p><div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">async fn log_and_time(req: Request, next: Next) -&gt; Response {
@@ -1094,7 +1165,7 @@ trait Layer&lt;Inner&gt; {
 </section>
 
 <section id="short-circuit">
-  <h2>5. Short-circuiting a request</h2>
+  <h2>6. Short-circuiting a request</h2>
   <p>A middleware function does not have to call the handler. It can return a response immediately.
   That is how authentication, authorization, rate limiting, and validation reject requests before
   expensive work happens.</p>
@@ -1176,7 +1247,7 @@ trait Layer&lt;Inner&gt; {
 </section>
 
 <section id="extensions">
-  <h2>6. Passing data with request extensions</h2>
+  <h2>7. Passing data with request extensions</h2>
   <p>Extensions are a typed, per-request map stored on the request. A middleware inserts a value;
   a handler extracts it by type. This is how the auth middleware tells the dashboard handler who the
   user is without putting user data in a global.</p>
@@ -1218,7 +1289,7 @@ trait Layer&lt;Inner&gt; {
 </section>
 
 <section id="state">
-  <h2>7. Shared state in middleware</h2>
+  <h2>8. Shared state in middleware</h2>
   <p><code>middleware::from_fn</code> cannot extract <code>State</code>. When a middleware needs the
   application state, build it with <code>middleware::from_fn_with_state</code>. It captures a clone
   of the state when the layer is constructed, then provides it to the <code>State</code> extractor
@@ -1266,7 +1337,7 @@ struct CurrentUser {
 </section>
 
 <section id="ordering">
-  <h2>8. Layer ordering</h2>
+  <h2>9. Layer ordering</h2>
   <p>Layers wrap each other like an onion. The <strong>outermost</strong> layer runs first on the
   request and last on the response. The only question is which layer ends up outermost.</p>
   
@@ -1368,7 +1439,7 @@ struct CurrentUser {
 </section>
 
 <section id="layer-vs-route-layer">
-  <h2>9. layer versus route_layer</h2>
+  <h2>10. layer versus route_layer</h2>
   <p>Authentication usually belongs on some routes, not all of them. <code>route_layer</code> applies
   middleware only when a route in that router matches. <code>layer</code> applies to everything the
   router serves, including the fallback that produces <code>404</code> responses.</p>
@@ -1414,7 +1485,7 @@ struct CurrentUser {
 </section>
 
 <section id="ecosystem">
-  <h2>10. Built-in middleware: tower-http</h2>
+  <h2>11. Built-in middleware: tower-http</h2>
   <p>You rarely need to write logging, timeouts, CORS, compression, or request IDs from scratch.
   <code>tower-http</code> provides production-ready layers that plug into the same
   <code>ServiceBuilder</code>.</p>

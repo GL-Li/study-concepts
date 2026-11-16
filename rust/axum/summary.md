@@ -172,4 +172,6 @@ Accept: text/html
 
 ## tutorial_middleware_in_axum.html
 
-
+**What**: Middlewares twrap the handler of a route in layers like an onion
+- to modify the HTTP request and response of the handler. 
+- commonly used for logging, authentication, CORSm, compression, timeouts, and rate limiting. 
