@@ -1,3 +1,11 @@
+# Axum
+mental image:
+- axum server for REST API endpoints
+- HTTP request in, HTTP response back
+- authentication: register, login, session id, and cookies 
+- middleware: modify request and response
+
+
 ## tutorial_rust_axum.html
 All axum server does is: receive a HTTP request and send back a HTTP response.
 
