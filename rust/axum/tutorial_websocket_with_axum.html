@@ -1004,6 +1004,16 @@ Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=</code></pre></div>
             with whole messages. Knowing the five message kinds explains most of
             the lifecycle behaviour you will observe.
           </p>
+          <p>
+            In plain English, a <strong>frame</strong> is a small packet of bytes
+            on the wire: a tiny header (what kind of data it is, whether more is
+            coming, how long it is) plus the data. A <strong>message</strong> is
+            what your code sends or receives. One message is usually one frame,
+            but a large message can be chopped into several frames and stitched
+            back together before axum hands it to you. Frames are the shipping
+            boxes; the message is what you ordered — and it sometimes arrives in
+            more than one box.
+          </p>
           <table>
             <thead>
               <tr>
@@ -1048,17 +1058,33 @@ Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=</code></pre></div>
               reassembled result.
             </li>
             <li>
-              Clients must mask their frames; servers must not. The underlying
-              tungstenite implementation enforces this, and rejects unmasked
-              client frames by default.
-            </li>
-            <li>
               In axum 0.8, <code>Message::Text</code> holds a
               <code>Utf8Bytes</code>, not a <code>String</code>. Use
               <code>text.as_str()</code> to borrow it and
               <code>Message::text(...)</code> to build one.
             </li>
+            <li>
+              Clients must mask their frames; servers must not. The underlying
+              tungstenite implementation enforces this, and rejects unmasked
+              client frames by default.
+            </li>
           </ul>
+          <div class="callout">
+            <p>
+              <strong>Why mask?</strong> A client XORs each payload byte with a
+              random 4-byte key and puts that key in the frame header. This does
+              not hide the data — any WebSocket-aware peer can unmask it — but
+              it makes the bytes on the wire look random to proxies and servers
+              that do not understand WebSocket framing. That blocks cache
+              poisoning and cross-protocol request smuggling, where a malicious
+              page tries to get crafted payload bytes read as HTTP or another
+              protocol. Servers do not mask because the server-to-client
+              direction has no such threat, and masking would only cost CPU.
+              In the example, neither the Rust code nor the page script touches
+              the mask: the browser masks outgoing frames, and tungstenite
+              checks and unmasks incoming ones.
+            </p>
+          </div>
           <p class="src">main.rs:106-120</p>
           <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code class="language-rust">while let Some(Ok(message)) = receiver.next().await {
     match message {
