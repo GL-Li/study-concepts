@@ -107,6 +107,19 @@ This state is shared by each request with `Arc::clone` and is extracted by extra
 The state extraction is straightforward with `State(state): State<T>` destructure in handler parameters.
 
 
+## tutorial_http_with_axum.html
+
+### HTTP request/response circle
+Request:
+- routing: method + path + query
+- headers: metadata of the request
+- body: content sent by client, often json format, need validation
+    - 400 Bad Request: wrong format that parser cannot understand 
+    - 422 Unprocessible Entity: body violate business rules
+
+
+
+
 ## tutorial_authentication_with_axum.html
 
 How the authentication logic works
