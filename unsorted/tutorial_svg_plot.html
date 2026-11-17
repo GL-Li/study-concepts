@@ -312,6 +312,7 @@ python3 -c "import xml.etree.ElementTree as E; E.parse('plot.svg'); print('valid
     <li><strong>Elements</strong> look like <code>&lt;name attr="value"&gt;children&lt;/name&gt;</code>, or self-close as <code>&lt;name …/&gt;</code> when empty. Attribute values are always quoted, even numbers.</li>
     <li><strong>Nesting</strong> forms a tree with exactly one root (<code>&lt;svg&gt;</code>). Tags close in reverse order of opening, which is why the file ends with <code>&lt;/g&gt;</code> then <code>&lt;/svg&gt;</code>.</li>
     <li><code>xmlns="http://www.w3.org/2000/svg"</code> declares the SVG <em>namespace</em>. Without it a browser treats the file as generic XML and shows a text tree instead of a picture.</li>
+    <li>That value is an <strong>identifier, not an address</strong>: the browser never downloads it or checks that the URL exists, so <code>xmlns="urn:anything"</code> is technically legal. Its job is only to disambiguate tag names (SVG's <code>&lt;title&gt;</code> vs. HTML's), and using the W3C URL is a convention for global uniqueness. It must still be a valid URI and match exactly wherever the same namespace is referenced.</li>
     <li>XML is <strong>strict</strong>, unlike HTML: an unclosed tag, an unquoted attribute or a bare <code>&amp;</code> or <code>&lt;</code> in text makes the whole file fail to render. Write them as <code>&amp;amp;</code> and <code>&amp;lt;</code>.</li>
   </ul>
 </section>
