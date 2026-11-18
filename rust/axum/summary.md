@@ -1,9 +1,14 @@
 # Axum
-mental image:
+
+### mental image:
+Basics
 - axum server for REST API endpoints
 - HTTP request in, HTTP response back
 - authentication: register, login, session id, and cookies 
 - middleware: modify request and response
+
+Advanced
+- WebSocket allow bidirectional real time communication between a client and a server, thus between two or more clients and a server
 
 
 ## tutorial_rust_axum.html
@@ -196,3 +201,9 @@ Accept: text/html
 **What**: Middlewares twrap the handler of a route in layers like an onion
 - to modify the HTTP request and response of the handler. 
 - commonly used for logging, authentication, CORSm, compression, timeouts, and rate limiting. 
+
+## tutorial_websocket_with_axum.html
+
+**What**: allow realtime bidirectional communication between client and server
+- as a result, allow realtime communication among multiple clients and one server
+- upgraded from a HTTP request route
