@@ -207,3 +207,26 @@ Accept: text/html
 **What**: allow realtime bidirectional communication between client and server
 - as a result, allow realtime communication among multiple clients and one server
 - upgraded from a HTTP request route
+
+### How it works
+https://www.youtube.com/watch?v=hd_d-K-jDFM
+
+- It starts as a HTTP request and pass all HTTP checks to reach the server.
+
+    ```
+    GET /chat HTTP/1.1
+    Host: example.com
+    Upgrade: WebSocket
+    Connection: Upgrade
+    Sec-WebSocket-Key: dsafasgHIGIJH==
+    Sec-VebSocket-Version: 13
+    ```
+- On the server, the protocol changes from HTTP to WebSocket, and send a HTTP response but keep the Tcp connection open
+    ```
+    HTTP/1.1 101 Switching Protocols
+    Upgrae: WebSocket
+    Connection: Upgrade
+    Sec-webSocket-Accept: S5egdsafAAGdr=
+    ```
+- Hereafter WebSocket uses Tcp connection established by the HTTP request for bidirectional communication between client and server. 
+

@@ -1,0 +1,1343 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Server-Sent Events with axum — Tutorial</title>
+    <script>
+      // Set theme before first paint to avoid a flash of the wrong theme.
+      try {
+        var t = localStorage.getItem("theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #fdf6e3;
+        --bg-sunken: #eee8d5;
+        --bg-code: #f7f1de;
+        --text: #52676d;
+        --text-strong: #586e75;
+        --muted: #7d8f92;
+        --border: #ded8c3;
+        --link: #1f7bb5;
+        --accent: #b58900;
+        --shadow: 0 1px 2px rgba(88, 110, 117, 0.12);
+        --tok-comment: #93a1a1;
+        --tok-keyword: #859900;
+        --tok-string: #2aa198;
+        --tok-number: #d33682;
+        --tok-function: #268bd2;
+        --tok-type: #b58900;
+        --tok-macro: #cb4b16;
+        --tok-op: #657b83;
+        --tok-punct: #839496;
+        --tok-property: #268bd2;
+        --tok-builtin: #6c71c4;
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #002b36;
+        --bg-sunken: #073642;
+        --bg-code: #06313c;
+        --text: #93a1a1;
+        --text-strong: #c5d1d1;
+        --muted: #6f8489;
+        --border: #12414d;
+        --link: #57b3e8;
+        --accent: #d9a520;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+        --tok-comment: #5c7379;
+        --tok-keyword: #a3b31a;
+        --tok-string: #2fc0b5;
+        --tok-number: #e05a9a;
+        --tok-function: #4aa8e0;
+        --tok-type: #d9a520;
+        --tok-macro: #e2703a;
+        --tok-op: #93a1a1;
+        --tok-punct: #839496;
+        --tok-property: #4aa8e0;
+        --tok-builtin: #9a8fe0;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          color-scheme: dark;
+          --bg: #002b36;
+          --bg-sunken: #073642;
+          --bg-code: #06313c;
+          --text: #93a1a1;
+          --text-strong: #c5d1d1;
+          --muted: #6f8489;
+          --border: #12414d;
+          --link: #57b3e8;
+          --accent: #d9a520;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+          --tok-comment: #5c7379;
+          --tok-keyword: #a3b31a;
+          --tok-string: #2fc0b5;
+          --tok-number: #e05a9a;
+          --tok-function: #4aa8e0;
+          --tok-type: #d9a520;
+          --tok-macro: #e2703a;
+          --tok-op: #93a1a1;
+          --tok-punct: #839496;
+          --tok-property: #4aa8e0;
+          --tok-builtin: #9a8fe0;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        line-height: 1.68;
+        font-size: 16px;
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 32px 24px 72px;
+        display: grid;
+        grid-template-columns: 250px minmax(0, 1fr);
+        gap: 36px;
+        align-items: start;
+      }
+      .sidebar {
+        position: sticky;
+        top: 24px;
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+        align-self: start;
+        padding-right: 6px;
+        font-size: 0.9rem;
+      }
+      .brand {
+        font-weight: 700;
+        color: var(--text-strong);
+        letter-spacing: 0.02em;
+        margin-bottom: 12px;
+      }
+      #theme-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 18px;
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg-sunken);
+        color: var(--text-strong);
+        font: inherit;
+        font-size: 0.82rem;
+        cursor: pointer;
+      }
+      #theme-toggle:hover {
+        border-color: var(--link);
+        color: var(--link);
+      }
+      .sidebar nav {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .sidebar nav a {
+        display: block;
+        padding: 5px 9px;
+        border-radius: 5px;
+        color: var(--muted);
+        text-decoration: none;
+        line-height: 1.35;
+      }
+      .sidebar nav a:hover {
+        color: var(--link);
+        background: var(--bg-sunken);
+      }
+      main {
+        min-width: 0;
+      }
+      header {
+        padding-bottom: 18px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 8px;
+      }
+      .eyebrow {
+        margin: 0 0 6px;
+        color: var(--accent);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 0 0 10px;
+        color: var(--text-strong);
+        font-size: clamp(1.7rem, 3.6vw, 2.25rem);
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+      }
+      .lede {
+        margin: 0;
+        font-size: 1.06rem;
+        color: var(--text);
+        max-width: 66ch;
+      }
+      h2 {
+        margin: 2.4rem 0 0.7rem;
+        color: var(--text-strong);
+        font-size: 1.36rem;
+        line-height: 1.3;
+        padding-bottom: 0.3rem;
+        border-bottom: 1px solid var(--border);
+        break-after: avoid;
+      }
+      h3 {
+        margin: 1.5rem 0 0.5rem;
+        color: var(--text-strong);
+        font-size: 1.05rem;
+        break-after: avoid;
+      }
+      p {
+        margin: 0.7rem 0;
+        max-width: 72ch;
+      }
+      ul, ol {
+        padding-left: 1.4rem;
+        max-width: 72ch;
+      }
+      li {
+        margin: 0.35rem 0;
+      }
+      li > code, p > code, td > code {
+        white-space: nowrap;
+      }
+      code {
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+        font-size: 0.88em;
+      }
+      :not(pre) > code {
+        background: var(--bg-sunken);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.08em 0.34em;
+        color: var(--text-strong);
+      }
+      a {
+        color: var(--link);
+        text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+      }
+      a:hover {
+        text-decoration: none;
+      }
+      .code {
+        position: relative;
+        margin: 1rem 0 1.2rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--bg-code);
+        box-shadow: var(--shadow);
+        break-inside: avoid;
+      }
+      .code-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 5px 10px;
+        background: var(--bg-sunken);
+        border-bottom: 1px solid var(--border);
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 0.76rem;
+        color: var(--muted);
+      }
+      .copy {
+        flex: none;
+        padding: 3px 10px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg);
+        color: var(--text-strong);
+        font: inherit;
+        font-size: 0.75rem;
+        cursor: pointer;
+      }
+      .copy:hover {
+        border-color: var(--link);
+        color: var(--link);
+      }
+      pre {
+        margin: 0;
+        padding: 14px 16px;
+        overflow-x: auto;
+        line-height: 1.55;
+        tab-size: 4;
+      }
+      pre code {
+        display: block;
+        font-size: 0.845rem;
+        color: var(--text-strong);
+      }
+      mark {
+        background: rgba(181, 137, 0, 0.24);
+        background: color-mix(in srgb, var(--accent) 24%, transparent);
+        color: inherit;
+        border-radius: 2px;
+      }
+      figure {
+        margin: 1.4rem 0;
+        break-inside: avoid;
+      }
+      figure svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-code);
+        padding: 10px;
+      }
+      figcaption {
+        margin-top: 0.45rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+        text-align: center;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        margin: 1rem 0 1.3rem;
+        break-inside: avoid;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+      th, td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th {
+        background: var(--bg-sunken);
+        color: var(--text-strong);
+        font-size: 0.82rem;
+        letter-spacing: 0.02em;
+      }
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+      .note {
+        margin: 1.1rem 0;
+        padding: 0.75rem 1rem;
+        border-left: 3px solid var(--accent);
+        border-radius: 0 6px 6px 0;
+        background: var(--bg-sunken);
+        break-inside: avoid;
+      }
+      .note p {
+        margin: 0;
+      }
+      .note strong {
+        color: var(--text-strong);
+      }
+      .pitfall {
+        border-left-color: var(--tok-macro);
+      }
+      section {
+        scroll-margin-top: 16px;
+      }
+      /* Prism tokens, colored from the Solarized variables so the theme toggle
+         recolors code automatically. */
+      .token.comment,
+      .token.prolog,
+      .token.doctype,
+      .token.cdata {
+        color: var(--tok-comment);
+        font-style: italic;
+      }
+      .token.punctuation {
+        color: var(--tok-punct);
+      }
+      .token.property,
+      .token.tag,
+      .token.constant,
+      .token.symbol,
+      .token.deleted {
+        color: var(--tok-property);
+      }
+      .token.boolean,
+      .token.number {
+        color: var(--tok-number);
+      }
+      .token.selector,
+      .token.attr-name,
+      .token.string,
+      .token.char,
+      .token.inserted,
+      .token.url {
+        color: var(--tok-string);
+      }
+      .token.builtin {
+        color: var(--tok-builtin);
+      }
+      .token.operator,
+      .token.entity {
+        color: var(--tok-op);
+      }
+      .token.atrule,
+      .token.attr-value,
+      .token.keyword,
+      .token.rule {
+        color: var(--tok-keyword);
+      }
+      .token.function,
+      .token.class-name {
+        color: var(--tok-function);
+      }
+      .token.regex,
+      .token.important,
+      .token.variable,
+      .token.type,
+      .token.lifetime {
+        color: var(--tok-type);
+      }
+      .token.macro,
+      .token.attribute,
+      .token.annotation {
+        color: var(--tok-macro);
+      }
+      .token.important,
+      .token.bold {
+        font-weight: 600;
+      }
+      .token.italic {
+        font-style: italic;
+      }
+
+      @media (max-width: 820px) {
+        .wrap {
+          display: block;
+          padding: 22px 18px 56px;
+        }
+        .sidebar {
+          position: static;
+          max-height: none;
+          overflow: visible;
+          margin-bottom: 26px;
+          padding-bottom: 14px;
+          border-bottom: 1px solid var(--border);
+        }
+        .sidebar nav {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 2px 8px;
+        }
+      }
+
+      @media print {
+        :root,
+        :root[data-theme="dark"],
+        :root[data-theme="light"] {
+          color-scheme: light;
+          --bg: #ffffff;
+          --bg-sunken: #f3f3f3;
+          --bg-code: #f7f7f7;
+          --text: #111111;
+          --text-strong: #000000;
+          --muted: #333333;
+          --border: #bbbbbb;
+          --link: #0645ad;
+          --accent: #7a5c00;
+          --shadow: none;
+        }
+        body {
+          font-size: 11pt;
+        }
+        .wrap {
+          display: block;
+          max-width: none;
+          padding: 0;
+        }
+        .sidebar,
+        .copy,
+        .code-top {
+          display: none !important;
+        }
+        a {
+          color: #000;
+          text-decoration: underline;
+        }
+        main a[href^="http"]::after {
+          content: " (" attr(href) ")";
+          font-size: 0.8em;
+        }
+        .token {
+          color: #000 !important;
+          font-style: normal !important;
+          font-weight: normal !important;
+        }
+        .token.comment,
+        .token.punctuation {
+          color: #444 !important;
+        }
+        h2 {
+          break-after: avoid;
+        }
+        pre,
+        figure,
+        table,
+        .note,
+        .code {
+          break-inside: avoid;
+        }
+        @page {
+          margin: 16mm;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <aside class="sidebar">
+        <div class="brand">axum · SSE</div>
+        <button id="theme-toggle" type="button">Dark mode</button>
+        <nav aria-label="Table of contents">
+          <a href="#how-to-use">How to Use</a>
+          <a href="#what-you-learn">What You'll Learn</a>
+          <a href="#example">The Example</a>
+          <a href="#protocol">SSE in One Picture</a>
+          <a href="#wire-format">The Wire Format</a>
+          <a href="#streams">Rust Streams, Briefly</a>
+          <a href="#broadcast">Fan-out with broadcast</a>
+          <a href="#bridging">Channel → Stream → Sse</a>
+          <a href="#sse-response">Building the Response</a>
+          <a href="#producer">The Producer Task</a>
+          <a href="#client">The Browser Client</a>
+          <a href="#pitfalls">Common Pitfalls</a>
+          <a href="#takeaways">Key Takeaways</a>
+        </nav>
+      </aside>
+
+      <main>
+        <header>
+          <p class="eyebrow">Rust · axum 0.8</p>
+          <h1>Server-Sent Events with axum</h1>
+          <p class="lede">
+            Build a one-way, always-open event stream from a Rust server to a browser — with
+            fan-out to many clients, keep-alives, and a working <code>EventSource</code> client.
+          </p>
+        </header>
+
+        <section id="how-to-use">
+          <h2>How to Use</h2>
+          <p>
+            Create a new binary crate and add the four dependencies. The versions below are the ones
+            this tutorial was verified against with Rust 1.95.
+          </p>
+          <div class="code">
+            <div class="code-top"><span>terminal</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-bash">cargo new sse-demo
+cd sse-demo
+cargo add axum@0.8.9
+cargo add tokio@1.54.1 --features full
+cargo add tokio-stream@0.1.19 --features sync
+cargo add futures-util@0.3.34</code></pre>
+          </div>
+          <p>
+            Replace the contents of <code>src/main.rs</code> with <a href="#example">The Example</a>
+            below, then run it.
+          </p>
+          <div class="code">
+            <div class="code-top"><span>terminal</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-bash">cargo run</code></pre>
+          </div>
+          <p>
+            Open <code>http://127.0.0.1:3000</code> in <strong>two</strong> tabs, and in a third
+            terminal watch the raw stream with curl. <code>-N</code> turns off curl's output
+            buffering so events appear as they arrive.
+          </p>
+          <div class="code">
+            <div class="code-top"><span>terminal · curl</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-bash">curl -N http://127.0.0.1:3000/events</code></pre>
+          </div>
+          <p>You should see frames arrive once per second, like this (your numbers start wherever the server's clock is):</p>
+          <div class="code">
+            <div class="code-top"><span>expected output</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-text">event: tick
+id: 3
+data: tick #3
+
+event: tick
+id: 4
+data: tick #4
+
+event: tick
+id: 5
+data: tick #5</code></pre>
+          </div>
+          <p>
+            In the browser, the status flips to <em>connected</em> and a new list item appears each
+            second showing the payload and its id. Both tabs receive the same tick numbers: this is
+            fan-out, not two independent timers.
+          </p>
+          <div class="note">
+            <p>
+              <strong>What to observe:</strong> the response never ends — this is one HTTP request
+              carrying an unbounded body. Stop the server and the browser status becomes
+              <em>reconnecting…</em>; restart it and events resume automatically.
+            </p>
+          </div>
+        </section>
+
+        <section id="what-you-learn">
+          <h2>What You'll Learn</h2>
+          <ul>
+            <li>What an SSE endpoint really is on the wire, and how it differs from WebSockets and polling.</li>
+            <li>The <code>text/event-stream</code> frame format: <code>data</code>, <code>event</code>, <code>id</code>, <code>retry</code>, and the blank-line dispatch rule.</li>
+            <li>The Rust <code>Stream</code> trait and <code>StreamExt</code> adapters — the async analog of <code>Iterator</code>.</li>
+            <li>Fanning one event out to many browsers with a Tokio <code>broadcast</code> channel, including lagging-subscriber semantics.</li>
+            <li>Bridging a channel into axum with <code>BroadcastStream</code>, <code>filter_map</code>, and <code>Infallible</code>.</li>
+            <li>axum's <code>Sse</code>, <code>Event</code>, and <code>KeepAlive</code> response types.</li>
+            <li>Driving events from a background <code>tokio::spawn</code> task with shared <code>State</code>.</li>
+            <li>The browser <code>EventSource</code> lifecycle: named events, auto-reconnect, and <code>Last-Event-ID</code>.</li>
+            <li>The production traps: buffering proxies, compression, silent event loss, and idle-only keep-alives.</li>
+          </ul>
+        </section>
+
+        <section id="example">
+          <h2>The Example</h2>
+          <p>
+            Everything lives in one file. A background task ticks once per second and publishes each
+            tick into a broadcast channel; every open <code>/events</code> connection subscribes and
+            streams the ticks out as SSE frames. <code>/</code> serves a tiny page that consumes the
+            stream with <code>EventSource</code>.
+          </p>
+          <div class="code">
+            <div class="code-top"><span>src/main.rs</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-rust">use std::{convert::Infallible, time::Duration};
+
+use axum::{
+    Router,
+    extract::State,
+    response::{
+        Html,
+        sse::{Event, KeepAlive, Sse},
+    },
+    routing::get,
+};
+use futures_util::{Stream, StreamExt};
+use tokio::sync::broadcast;
+use tokio_stream::wrappers::BroadcastStream;
+
+#[derive(Clone)]
+struct Tick {
+    n: u64,
+    text: String,
+}
+
+type Ticks = broadcast::Sender&lt;Tick&gt;;
+
+async fn events(State(tx): State&lt;Ticks&gt;) -&gt; Sse&lt;impl Stream&lt;Item = Result&lt;Event, Infallible&gt;&gt;&gt; {
+    let rx = tx.subscribe();
+
+    let stream = BroadcastStream::new(rx).filter_map(|msg| async move {
+        match msg {
+            Ok(tick) =&gt; Some(Ok(Event::default()
+                .event("tick")
+                .id(tick.n.to_string())
+                .data(tick.text))),
+            Err(err) =&gt; {
+                eprintln!("subscriber fell behind: {err}");
+                None
+            }
+        }
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(10)))
+}
+
+async fn page() -&gt; Html&lt;&amp;'static str&gt; {
+    Html(PAGE)
+}
+
+#[tokio::main]
+async fn main() {
+    let (tx, _) = broadcast::channel::&lt;Tick&gt;(16);
+
+    let producer = tx.clone();
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(1));
+        let mut n = 0u64;
+        loop {
+            ticker.tick().await;
+            n += 1;
+            let tick = Tick {
+                n,
+                text: format!("tick #{n}"),
+            };
+            let _ = producer.send(tick); // Err means nobody is listening yet
+        }
+    });
+
+    let app = Router::new()
+        .route("/", get(page))
+        .route("/events", get(events))
+        .with_state(tx);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        .await
+        .unwrap();
+    println!("open http://127.0.0.1:3000");
+    axum::serve(listener, app).await.unwrap();
+}
+
+const PAGE: &amp;str = r##"&lt;!doctype html&gt;
+&lt;html lang="en"&gt;
+  &lt;head&gt;&lt;meta charset="utf-8"&gt;&lt;title&gt;SSE demo&lt;/title&gt;&lt;/head&gt;
+  &lt;body&gt;
+    &lt;h1&gt;Server-Sent Events&lt;/h1&gt;
+    &lt;p&gt;Status: &lt;strong id="status"&gt;connecting...&lt;/strong&gt;&lt;/p&gt;
+    &lt;ol id="log"&gt;&lt;/ol&gt;
+    &lt;script&gt;
+      const statusEl = document.getElementById("status");
+      const logEl = document.getElementById("log");
+      const es = new EventSource("/events");
+      es.onopen = () =&gt; { statusEl.textContent = "connected"; };
+      es.onerror = () =&gt; { statusEl.textContent = "reconnecting..."; };
+      es.addEventListener("tick", (e) =&gt; {
+        const li = document.createElement("li");
+        li.textContent = `${e.data} (id=${e.lastEventId})`;
+        logEl.prepend(li);
+      });
+    &lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+"##;</code></pre>
+          </div>
+        </section>
+
+        <section id="protocol">
+          <h2>SSE in One Picture</h2>
+          <p>
+            An SSE endpoint is not a series of requests. It is <strong>one ordinary GET request whose
+            response body never finishes</strong>.
+          </p>
+          <figure>
+            <svg viewBox="0 0 760 230" role="img" aria-label="Browser sends one GET request to the axum handler, which keeps writing text/event-stream events back over the same response.">
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--link)" />
+                </marker>
+              </defs>
+              <rect x="20" y="62" width="200" height="96" rx="10" fill="var(--bg-sunken)" stroke="var(--border)" stroke-width="1.5" />
+              <text x="120" y="98" text-anchor="middle" fill="var(--text-strong)" font-size="15" font-weight="700">Browser</text>
+              <text x="120" y="122" text-anchor="middle" fill="var(--text)" font-size="13" font-family="monospace">new EventSource(</text>
+              <text x="120" y="140" text-anchor="middle" fill="var(--text)" font-size="13" font-family="monospace">"/events")</text>
+
+              <rect x="510" y="62" width="230" height="96" rx="10" fill="var(--bg-sunken)" stroke="var(--border)" stroke-width="1.5" />
+              <text x="625" y="98" text-anchor="middle" fill="var(--text-strong)" font-size="15" font-weight="700">axum handler</text>
+              <text x="625" y="122" text-anchor="middle" fill="var(--text)" font-size="13" font-family="monospace">Sse&lt;Stream&lt;Event&gt;&gt;</text>
+              <text x="625" y="140" text-anchor="middle" fill="var(--text)" font-size="13" font-family="monospace">fn events(..)</text>
+
+              <line x1="228" y1="96" x2="500" y2="96" stroke="var(--link)" stroke-width="2" marker-end="url(#arrow)" />
+              <text x="364" y="86" text-anchor="middle" fill="var(--text)" font-size="12.5" font-family="monospace">GET /events</text>
+
+              <line x1="500" y1="138" x2="228" y2="138" stroke="var(--link)" stroke-width="2" marker-end="url(#arrow)" />
+              <text x="364" y="164" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">200 · text/event-stream</text>
+              <text x="364" y="182" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">body stays open</text>
+
+              <text x="380" y="214" text-anchor="middle" fill="var(--muted)" font-size="12.5">One long-lived response, many events.</text>
+            </svg>
+            <figcaption>The request completes its headers once; the body stays open and is filled with events.</figcaption>
+          </figure>
+          <ul>
+            <li>The server answers <code>200 OK</code> with <code>Content-Type: text/event-stream</code> and then keeps writing UTF-8 text frames.</li>
+            <li>Arrows only go <strong>server → browser</strong> inside that response. Anything the browser sends back uses separate normal requests.</li>
+            <li>It is plain HTTP: chunked transfer on HTTP/1.1, ordinary DATA frames on HTTP/2. Proxies see a normal response.</li>
+            <li><code>EventSource</code> reconnects by itself when the connection drops, unlike a raw <code>fetch</code> stream.</li>
+          </ul>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th></th><th>SSE</th><th>WebSocket</th><th>Long-polling</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Direction</td><td>server → client</td><td>bidirectional</td><td>server → client, per request</td></tr>
+                <tr><td>Transport</td><td>plain HTTP response</td><td>HTTP upgrade</td><td>repeated HTTP requests</td></tr>
+                <tr><td>Browser API</td><td><code>EventSource</code></td><td><code>WebSocket</code></td><td><code>fetch</code> loop</td></tr>
+                <tr><td>Reconnect</td><td>built in</td><td>you write it</td><td>you write it</td></tr>
+                <tr><td>Payload</td><td>UTF-8 text only</td><td>text + binary</td><td>anything</td></tr>
+                <tr><td>Good for</td><td>feeds, notifications, progress</td><td>chat, games, collaboration</td><td>legacy fallbacks</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="wire-format">
+          <h2>The Wire Format</h2>
+          <p>
+            Before touching Rust, know what the browser actually parses. Each event is a few
+            <code>field: value</code> lines followed by a <strong>blank line</strong>.
+          </p>
+          <figure>
+            <svg viewBox="0 0 760 270" role="img" aria-label="An SSE event consists of event, id and data lines followed by a blank line; annotations explain which JavaScript property each line maps to.">
+              <defs>
+                <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--link)" />
+                </marker>
+              </defs>
+              <rect x="18" y="28" width="330" height="150" rx="8" fill="var(--bg-sunken)" stroke="var(--border)" />
+              <text x="34" y="57" fill="var(--tok-keyword)" font-size="14" font-family="monospace" font-weight="700">event:</text>
+              <text x="98" y="57" fill="var(--text-strong)" font-size="14" font-family="monospace">tick</text>
+              <text x="34" y="87" fill="var(--tok-keyword)" font-size="14" font-family="monospace" font-weight="700">id:</text>
+              <text x="98" y="87" fill="var(--text-strong)" font-size="14" font-family="monospace">42</text>
+              <text x="34" y="117" fill="var(--tok-keyword)" font-size="14" font-family="monospace" font-weight="700">data:</text>
+              <text x="98" y="117" fill="var(--text-strong)" font-size="14" font-family="monospace">tick #42</text>
+              <line x1="34" y1="137" x2="332" y2="137" stroke="var(--border)" stroke-dasharray="4 4" />
+              <text x="34" y="160" fill="var(--muted)" font-size="12.5" font-family="monospace">(blank line → dispatch)</text>
+
+              <line x1="354" y1="52" x2="430" y2="52" stroke="var(--link)" stroke-width="1.5" marker-end="url(#arrow2)" />
+              <text x="440" y="56" fill="var(--text)" font-size="12.5">event name → <tspan font-family="monospace">addEventListener("tick")</tspan></text>
+
+              <line x1="354" y1="82" x2="430" y2="82" stroke="var(--link)" stroke-width="1.5" marker-end="url(#arrow2)" />
+              <text x="440" y="86" fill="var(--text)" font-size="12.5">→ <tspan font-family="monospace">e.lastEventId</tspan> and <tspan font-family="monospace">Last-Event-ID</tspan></text>
+
+              <line x1="354" y1="112" x2="430" y2="112" stroke="var(--link)" stroke-width="1.5" marker-end="url(#arrow2)" />
+              <text x="440" y="116" fill="var(--text)" font-size="12.5">payload → <tspan font-family="monospace">e.data</tspan></text>
+
+              <line x1="354" y1="152" x2="430" y2="152" stroke="var(--link)" stroke-width="1.5" marker-end="url(#arrow2)" />
+              <text x="440" y="156" fill="var(--text)" font-size="12.5">nothing is delivered until the blank line</text>
+
+              <text x="380" y="218" text-anchor="middle" fill="var(--muted)" font-size="12.5">Field names are lowercase; order is arbitrary; values are UTF-8.</text>
+              <text x="380" y="244" text-anchor="middle" fill="var(--muted)" font-size="12.5">A line starting with a colon (:) is a comment / heartbeat.</text>
+            </svg>
+            <figcaption>One SSE event: metadata lines plus payload, terminated by an empty line.</figcaption>
+          </figure>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Field</th><th>Meaning</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>data:</code></td><td>Payload. Multiple <code>data:</code> lines are joined with <code>\n</code>. axum splits embedded newlines for you.</td></tr>
+                <tr><td><code>event:</code></td><td>Event type name. Omit it and the event is delivered as <code>"message"</code> (<code>es.onmessage</code>).</td></tr>
+                <tr><td><code>id:</code></td><td>Last event id. On reconnect the browser sends it back as the <code>Last-Event-ID</code> header.</td></tr>
+                <tr><td><code>retry:</code></td><td>Reconnect delay hint in milliseconds, for example <code>retry: 3000</code>.</td></tr>
+                <tr><td><code>:</code> …</td><td>Comment line. Ignored by the parser; used as heartbeats by <code>KeepAlive</code>.</td></tr>
+                <tr><td>blank line</td><td>Dispatch boundary. Without it, the browser buffers the fields and delivers nothing.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="streams">
+          <h2>Rust Streams, Briefly</h2>
+          <p>
+            axum's SSE body is a <strong>stream</strong>. If you know iterators, a stream is the async
+            version: values are pulled one at a time, but the producer may need to wait between them.
+          </p>
+          <figure>
+            <svg viewBox="0 0 760 210" role="img" aria-label="Timeline of poll_next returning Pending, then the task sleeping, then being woken and polled again, returning an event.">
+              <defs>
+                <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--link)" />
+                </marker>
+              </defs>
+              <line x1="40" y1="70" x2="720" y2="70" stroke="var(--border)" stroke-width="2" />
+              <circle cx="90" cy="70" r="6" fill="var(--link)" />
+              <circle cx="330" cy="70" r="6" fill="var(--accent)" />
+              <circle cx="520" cy="70" r="6" fill="var(--link)" />
+              <circle cx="690" cy="70" r="6" fill="var(--link)" />
+
+              <text x="90" y="48" text-anchor="middle" fill="var(--text-strong)" font-size="12.5" font-family="monospace">poll_next()</text>
+              <text x="90" y="94" text-anchor="middle" fill="var(--text)" font-size="12">no event yet</text>
+
+              <text x="330" y="48" text-anchor="middle" fill="var(--text-strong)" font-size="12.5" font-family="monospace">Poll::Pending</text>
+              <text x="330" y="94" text-anchor="middle" fill="var(--text)" font-size="12">waker registered</text>
+
+              <text x="520" y="48" text-anchor="middle" fill="var(--text-strong)" font-size="12.5" font-family="monospace">wake → poll_next()</text>
+              <text x="520" y="94" text-anchor="middle" fill="var(--text)" font-size="12">tick is ready</text>
+
+              <text x="690" y="48" text-anchor="middle" fill="var(--text-strong)" font-size="12.5" font-family="monospace">Poll::Ready</text>
+              <text x="690" y="94" text-anchor="middle" fill="var(--text)" font-size="12">one Event</text>
+
+              <path d="M 420 120 C 430 165, 590 165, 605 122" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow3)" />
+              <text x="512" y="172" text-anchor="middle" fill="var(--muted)" font-size="12">task sleeps — no thread is blocked</text>
+
+              <text x="380" y="200" text-anchor="middle" fill="var(--muted)" font-size="12">hyper polls the body whenever the client socket can take more bytes.</text>
+            </svg>
+            <figcaption>Pull-based: the connection task polls the stream; <code>Pending</code> parks it instead of blocking a thread.</figcaption>
+          </figure>
+          <ul>
+            <li><code>Iterator::next</code> returns <code>Option&lt;T&gt;</code> immediately. <code>Stream::poll_next</code> returns <code>Poll::Pending</code> and registers a waker when there is nothing yet.</li>
+            <li><code>StreamExt</code> methods such as <code>map</code>, <code>filter_map</code>, and <code>throttle</code> are lazy adapters. Nothing runs until the response body is polled.</li>
+            <li>The stream must be <code>Send + 'static</code>: it is moved into the response and may be polled on another thread. Own your data; do not capture borrowed locals.</li>
+            <li><code>futures-util</code> gives you the trait and combinators; <code>tokio-stream</code> adds adapters that turn Tokio channels into streams.</li>
+          </ul>
+          <div class="code">
+            <div class="code-top"><span>src/main.rs:12-14</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-rust" data-mark="1-3">use futures_util::{Stream, StreamExt};
+use tokio::sync::broadcast;
+use tokio_stream::wrappers::BroadcastStream;</code></pre>
+          </div>
+        </section>
+
+        <section id="broadcast">
+          <h2>Fan-out with a broadcast Channel</h2>
+          <p>
+            Each browser needs its own stream, but all streams must see the same events. A Tokio
+            <strong>broadcast</strong> channel does exactly that: one sender, many independent receivers.
+          </p>
+          <figure>
+            <svg viewBox="0 0 760 320" role="img" aria-label="A producer task sends ticks into a broadcast channel, which delivers a clone to three separate receivers, each feeding an SSE response and a browser.">
+              <defs>
+                <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--link)" />
+                </marker>
+              </defs>
+              <rect x="20" y="120" width="170" height="82" rx="9" fill="var(--bg-sunken)" stroke="var(--border)" />
+              <text x="105" y="150" text-anchor="middle" fill="var(--text-strong)" font-size="13.5" font-weight="700">producer task</text>
+              <text x="105" y="172" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">interval(1s)</text>
+              <text x="105" y="190" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">tx.send(tick)</text>
+
+              <rect x="280" y="96" width="180" height="130" rx="9" fill="var(--bg-sunken)" stroke="var(--accent)" stroke-width="2" />
+              <text x="370" y="126" text-anchor="middle" fill="var(--text-strong)" font-size="13.5" font-weight="700">broadcast::channel(16)</text>
+              <text x="370" y="150" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">Sender&lt;Tick&gt;</text>
+              <text x="370" y="170" text-anchor="middle" fill="var(--muted)" font-size="11.5">every message cloned</text>
+              <text x="370" y="188" text-anchor="middle" fill="var(--muted)" font-size="11.5">to every receiver</text>
+              <text x="370" y="208" text-anchor="middle" fill="var(--muted)" font-size="11.5">capacity = 16</text>
+
+              <line x1="194" y1="161" x2="272" y2="161" stroke="var(--link)" stroke-width="2" marker-end="url(#arrow4)" />
+
+              <line x1="464" y1="130" x2="540" y2="70" stroke="var(--link)" stroke-width="1.6" marker-end="url(#arrow4)" />
+              <line x1="464" y1="161" x2="540" y2="161" stroke="var(--link)" stroke-width="1.6" marker-end="url(#arrow4)" />
+              <line x1="464" y1="192" x2="540" y2="252" stroke="var(--link)" stroke-width="1.6" marker-end="url(#arrow4)" />
+
+              <text x="505" y="96" fill="var(--muted)" font-size="11" font-family="monospace">rx₁</text>
+              <text x="505" y="154" fill="var(--muted)" font-size="11" font-family="monospace">rx₂</text>
+              <text x="505" y="224" fill="var(--muted)" font-size="11" font-family="monospace">rx₃</text>
+
+              <rect x="548" y="46" width="130" height="52" rx="8" fill="var(--bg-sunken)" stroke="var(--border)" />
+              <text x="613" y="68" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">Sse → browser A</text>
+              <text x="613" y="86" text-anchor="middle" fill="var(--muted)" font-size="11">own TCP connection</text>
+
+              <rect x="548" y="136" width="130" height="52" rx="8" fill="var(--bg-sunken)" stroke="var(--border)" />
+              <text x="613" y="158" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">Sse → browser B</text>
+              <text x="613" y="176" text-anchor="middle" fill="var(--muted)" font-size="11">own TCP connection</text>
+
+              <rect x="548" y="226" width="130" height="52" rx="8" fill="var(--bg-sunken)" stroke="var(--border)" />
+              <text x="613" y="248" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">Sse → browser C</text>
+              <text x="613" y="266" text-anchor="middle" fill="var(--muted)" font-size="11">own TCP connection</text>
+
+              <text x="380" y="300" text-anchor="middle" fill="var(--muted)" font-size="12">Slow receiver? Messages beyond the capacity are dropped and reported as Lagged(n).</text>
+            </svg>
+            <figcaption>One producer, one channel, one receiver per connection — every receiver gets a clone of every message.</figcaption>
+          </figure>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Channel</th><th>Consumers</th><th>When a consumer is slow</th><th>Typical SSE use</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>mpsc</code></td><td>exactly one</td><td>sender waits (bounded) or grows (unbounded)</td><td>per-client dedicated events</td></tr>
+                <tr><td><code>broadcast</code></td><td>many</td><td>misses messages, gets <code>Lagged(n)</code></td><td>fan-out to many clients</td></tr>
+                <tr><td><code>watch</code></td><td>many</td><td>keep only the latest value</td><td>state snapshots, config</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <ul>
+            <li><code>broadcast::channel(16)</code> returns a <code>Sender</code> and one initial <code>Receiver</code>; <code>tx.subscribe()</code> creates a new receiver for each connection.</li>
+            <li><code>T</code> must be <code>Clone</code>, because the same value is cloned into every receiver. Here <code>Tick</code> derives <code>Clone</code>.</li>
+            <li>The capacity bounds how far behind any receiver may fall: the channel keeps at most 16 messages, so a receiver that falls further behind is told it lagged and <strong>loses the oldest events</strong>. Losing events is intentional; the alternative is unbounded memory growth.</li>
+            <li><code>Sender::send</code> only fails when there are <strong>zero</strong> receivers. At startup, before any browser connects, that is normal — hence <code>let _ =</code>.</li>
+          </ul>
+        </section>
+
+        <section id="bridging">
+          <h2>Bridge: Channel → Stream → Sse</h2>
+          <p>
+            The handler is the adapter layer: it subscribes a fresh receiver and turns it into a
+            per-connection stream of <code>Event</code> values.
+          </p>
+          <div class="code">
+            <div class="code-top"><span>src/main.rs:24-41</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-rust" data-mark="2,4,7-9,17">async fn events(State(tx): State&lt;Ticks&gt;) -&gt; Sse&lt;impl Stream&lt;Item = Result&lt;Event, Infallible&gt;&gt;&gt; {
+    let rx = tx.subscribe();
+
+    let stream = BroadcastStream::new(rx).filter_map(|msg| async move {
+        match msg {
+            Ok(tick) =&gt; Some(Ok(Event::default()
+                .event("tick")
+                .id(tick.n.to_string())
+                .data(tick.text))),
+            Err(err) =&gt; {
+                eprintln!("subscriber fell behind: {err}");
+                None
+            }
+        }
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(10)))
+}</code></pre>
+          </div>
+          <ul>
+            <li><code>State&lt;Ticks&gt;</code> extracts a clone of the sender stored in the router. <code>tx.subscribe()</code> must happen inside the handler so each connection gets its own receiver.</li>
+            <li><code>BroadcastStream::new(rx)</code> adapts the receiver into <code>Stream&lt;Item = Result&lt;Tick, BroadcastStreamRecvError&gt;&gt;</code>. The error case is <code>Lagged(n)</code>.</li>
+            <li><code>filter_map</code> handles both variants: a good tick becomes <code>Some(Ok(event))</code>; a lag error becomes <code>None</code> and is skipped. After that, the stream cannot fail, so the error type is <code>Infallible</code>.</li>
+            <li>The return type <code>Sse&lt;impl Stream&lt;Item = Result&lt;Event, Infallible&gt;&gt;&gt;</code> says “some unnamed concrete stream type” — the handler does not need to name <code>FilterMap&lt;BroadcastStream&lt;…&gt;, …&gt;</code>.</li>
+            <li>The receiver lives inside the returned stream. When the browser disconnects, hyper drops the body, the stream is dropped, and the receiver is cleaned up automatically.</li>
+          </ul>
+          <div class="note">
+            <p>
+              <strong>Why log the lag error?</strong> It is the only signal that a client silently
+              missed events. In production you might count it as a metric, or replay from a durable
+              log using <code>Last-Event-ID</code>.
+            </p>
+          </div>
+        </section>
+
+        <section id="sse-response">
+          <h2>Building the Response</h2>
+          <p>
+            axum gives you three small types: <code>Event</code> formats one frame,
+            <code>Sse</code> turns a stream into an HTTP response, and <code>KeepAlive</code> guards
+            quiet connections.
+          </p>
+          <div class="code">
+            <div class="code-top"><span>src/main.rs:29-32, 40</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-rust" data-mark="1-4,6">            Ok(tick) =&gt; Some(Ok(Event::default()
+                .event("tick")
+                .id(tick.n.to_string())
+                .data(tick.text))),
+            ...
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(10)))</code></pre>
+          </div>
+          <ul>
+            <li><code>Event::default().event("tick")</code> sets the <code>event:</code> field, <code>.id(...)</code> sets <code>id:</code>, and <code>.data(...)</code> sets <code>data:</code>. Add <code>.retry(Duration)</code> to send a reconnect-delay hint.</li>
+            <li>Implementing <code>IntoResponse</code>, <code>Sse</code> sets <code>Content-Type: text/event-stream</code> and <code>Cache-Control: no-cache</code> for you, then streams the body.</li>
+            <li><code>KeepAlive</code> sends a comment frame (<code>:</code>) so idle connections and intermediaries do not time out. Default is every 15 seconds; here it is 10.</li>
+            <li><strong>Subtle but important:</strong> keep-alives are only emitted while the stream is <em>idle</em>. Each real event resets the timer. With a tick every second you will never see one — that is correct, not a bug. Pause the producer for more than 10 seconds to observe it.</li>
+          </ul>
+          <div class="note">
+            <p>
+              <strong>No flush calls needed.</strong> SSE is not “write and flush”: every event the
+              stream yields is framed and sent. Backpressure comes from the socket, so a slow client
+              stops polling rather than silently buffering forever in your task.
+            </p>
+          </div>
+        </section>
+
+        <section id="producer">
+          <h2>The Producer Task</h2>
+          <p>
+            The event source is a plain Tokio task. It knows nothing about HTTP; it only publishes
+            ticks into the channel.
+          </p>
+          <div class="code">
+            <div class="code-top"><span>src/main.rs:47-69</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-rust" data-mark="3,6,10,16,23">#[tokio::main]
+async fn main() {
+    let (tx, _) = broadcast::channel::&lt;Tick&gt;(16);
+
+    let producer = tx.clone();
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(1));
+        let mut n = 0u64;
+        loop {
+            ticker.tick().await;
+            n += 1;
+            let tick = Tick {
+                n,
+                text: format!("tick #{n}"),
+            };
+            let _ = producer.send(tick); // Err means nobody is listening yet
+        }
+    });
+
+    let app = Router::new()
+        .route("/", get(page))
+        .route("/events", get(events))
+        .with_state(tx);
+}</code></pre>
+          </div>
+          <ul>
+            <li><code>tokio::spawn</code> detaches the producer onto the runtime. The task captures a cloned sender, so it is <code>'static</code> and outlives <code>main</code>'s scope.</li>
+            <li><code>tokio::time::interval</code> ticks forever; its first tick completes immediately, so the counter starts at 1 right away.</li>
+            <li><code>with_state(tx)</code> stores the sender in the router. Every handler call receives a clone through <code>State&lt;Ticks&gt;</code>, which is why the sender type must be <code>Clone</code>.</li>
+            <li>The initial receiver returned by <code>broadcast::channel</code> is dropped (<code>_</code>). Until the first browser subscribes, <code>send</code> returns <code>Err</code> — ignored on purpose.</li>
+            <li>In a real app the producer could be a database change feed, a job progress reporter, or a webhook consumer; the SSE layer stays identical.</li>
+          </ul>
+        </section>
+
+        <section id="client">
+          <h2>The Browser Client</h2>
+          <p>
+            <code>EventSource</code> does the protocol work: open, parse, and reconnect. You only
+            handle events and connection state.
+          </p>
+          <figure>
+            <svg viewBox="0 0 760 220" role="img" aria-label="EventSource state machine: CONNECTING, OPEN, then CLOSED on close, with automatic reconnect from CONNECTING and a Last-Event-ID header sent on reconnect.">
+              <defs>
+                <marker id="arrow5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--link)" />
+                </marker>
+              </defs>
+              <rect x="40" y="86" width="180" height="58" rx="28" fill="var(--bg-sunken)" stroke="var(--link)" stroke-width="1.6" />
+              <text x="130" y="110" text-anchor="middle" fill="var(--text-strong)" font-size="13" font-family="monospace">CONNECTING (0)</text>
+              <text x="130" y="129" text-anchor="middle" fill="var(--muted)" font-size="11.5">onopen pending</text>
+
+              <rect x="300" y="86" width="160" height="58" rx="28" fill="var(--bg-sunken)" stroke="var(--tok-keyword)" stroke-width="1.6" />
+              <text x="380" y="110" text-anchor="middle" fill="var(--text-strong)" font-size="13" font-family="monospace">OPEN (1)</text>
+              <text x="380" y="129" text-anchor="middle" fill="var(--muted)" font-size="11.5">events flowing</text>
+
+              <rect x="540" y="86" width="180" height="58" rx="28" fill="var(--bg-sunken)" stroke="var(--tok-macro)" stroke-width="1.6" />
+              <text x="630" y="110" text-anchor="middle" fill="var(--text-strong)" font-size="13" font-family="monospace">CLOSED (2)</text>
+              <text x="630" y="129" text-anchor="middle" fill="var(--muted)" font-size="11.5">only via es.close()</text>
+
+              <line x1="224" y1="108" x2="290" y2="108" stroke="var(--link)" stroke-width="1.6" marker-end="url(#arrow5)" />
+              <text x="257" y="98" text-anchor="middle" fill="var(--muted)" font-size="11">200 OK</text>
+
+              <line x1="464" y1="108" x2="530" y2="108" stroke="var(--link)" stroke-width="1.6" marker-end="url(#arrow5)" />
+              <text x="497" y="98" text-anchor="middle" fill="var(--muted)" font-size="11">close()</text>
+
+              <path d="M 380 148 C 380 190, 130 190, 130 150" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow5)" />
+              <text x="255" y="205" text-anchor="middle" fill="var(--muted)" font-size="12">network drop → onerror, auto-retry after retry hint or ~3 s</text>
+
+              <text x="380" y="42" text-anchor="middle" fill="var(--text)" font-size="12.5">On reconnect the browser adds <tspan font-family="monospace">Last-Event-ID</tspan> if any event had an <tspan font-family="monospace">id</tspan>.</text>
+            </svg>
+            <figcaption><code>EventSource</code> reconnects itself; transient failures never reach <code>CLOSED</code>.</figcaption>
+          </figure>
+          <div class="code">
+            <div class="code-top"><span>src/main.rs:85-96</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-rust" data-mark="4,5-7,9">    &lt;script&gt;
+      const statusEl = document.getElementById("status");
+      const logEl = document.getElementById("log");
+      const es = new EventSource("/events");
+      es.onopen = () =&gt; { statusEl.textContent = "connected"; };
+      es.onerror = () =&gt; { statusEl.textContent = "reconnecting..."; };
+      es.addEventListener("tick", (e) =&gt; {
+        const li = document.createElement("li");
+        li.textContent = `${e.data} (id=${e.lastEventId})`;
+        logEl.prepend(li);
+      });
+    &lt;/script&gt;</code></pre>
+          </div>
+          <ul>
+            <li><code>new EventSource("/events")</code> issues one GET and starts parsing <code>text/event-stream</code>. You never read or parse the body yourself.</li>
+            <li><code>onopen</code> fires when the response headers arrive and the connection is live; <code>onerror</code> fires when it drops. <code>readyState</code> tells you where you are: 0 <code>CONNECTING</code>, 1 <code>OPEN</code>, 2 <code>CLOSED</code>.</li>
+            <li>Because the server names events <code>"tick"</code>, you must use <code>addEventListener("tick", ...)</code>. <code>onmessage</code> only receives events without an <code>event:</code> field.</li>
+            <li><code>e.data</code> is the payload string; <code>e.lastEventId</code> mirrors the <code>id:</code> field. On reconnect the browser sends <code>Last-Event-ID</code>, but <strong>your server must replay missed events</strong> — this example does not, so ticks during an outage are lost.</li>
+            <li><code>EventSource</code> cannot set custom headers such as <code>Authorization</code>. For auth use same-site cookies or a token in the query string, and remember that the browser's per-host connection limit applies.</li>
+          </ul>
+        </section>
+
+        <section id="pitfalls">
+          <h2>Common Pitfalls</h2>
+          <div class="note pitfall">
+            <p><strong>1. Expecting keep-alives on a busy stream.</strong> <code>KeepAlive</code> is idle-triggered; it resets whenever a real event is sent. To force a heartbeat, emit your own comment event on a timer. To verify the feature, stop sending events for longer than the keep-alive interval.</p>
+          </div>
+          <div class="note pitfall">
+            <p><strong>2. Compression and proxy buffering swallow events.</strong> Compression middleware may hold back small chunks, and reverse proxies often buffer responses by default. Disable compression for <code>text/event-stream</code>, and configure nginx-style proxies with <code>proxy_buffering off</code> (plus <code>X-Accel-Buffering: no</code> if needed). axum sets <code>Cache-Control: no-cache</code> but cannot configure your proxy.</p>
+          </div>
+          <div class="note pitfall">
+            <p><strong>3. Ignoring <code>Lagged</code>.</strong> Broadcast drops old messages for slow receivers and tells you only via <code>Err(Lagged(n))</code>. If you propagate that error, the SSE response ends. If you silently ignore it, clients miss data. Choose deliberately; size the channel and monitor lag.</p>
+          </div>
+          <div class="note pitfall">
+            <p><strong>4. Treating <code>send</code> failure as fatal.</strong> At startup there are no receivers, so <code>send</code> returns <code>Err</code> even though everything is fine. Ignore it, or use <code>tx.receiver_count()</code> to check.</p>
+          </div>
+          <div class="note pitfall">
+            <p><strong>5. Returning errors through the stream.</strong> The stream item is <code>Result&lt;Event, E&gt;</code>; an <code>Err</code> terminates the response. After mapping lag to <code>None</code>, <code>Infallible</code> documents that this stream cannot fail.</p>
+          </div>
+          <div class="note pitfall">
+            <p><strong>6. Hand-rolling frames without the blank line.</strong> If you implement the protocol manually (instead of using <code>Event</code>), a missing empty line means the browser buffers fields and shows nothing. Similarly, one <code>data:</code> line per newline is required. <code>Event</code> handles both.</p>
+          </div>
+          <div class="note pitfall">
+            <p><strong>7. Sending binary or non-UTF-8 data.</strong> SSE is text-only. Encode bytes as base64 (and decode client-side), or use a WebSocket.</p>
+          </div>
+          <div class="note pitfall">
+            <p><strong>8. Holding a <code>std::sync</code> lock across <code>.await</code>.</strong> SSE handlers are async and long-lived. Holding a blocking mutex guard across an await point can deadlock or stall the runtime; drop the guard before awaiting, or use <code>tokio::sync</code> primitives.</p>
+          </div>
+          <div class="note pitfall">
+            <p><strong>9. Forgetting cross-origin rules.</strong> <code>EventSource</code> is subject to CORS. Cross-origin use needs <code>Access-Control-Allow-Origin</code>, and cookie auth needs <code>withCredentials</code> plus the right CORS credentials headers.</p>
+          </div>
+        </section>
+
+        <section id="takeaways">
+          <h2>Key Takeaways</h2>
+          <p>
+            An SSE endpoint is one long-lived HTTP response carrying a stream of newline-delimited
+            events, and axum models that body as a Rust <code>Stream</code> wrapped in <code>Sse</code>.
+            A broadcast channel is the simplest way to fan one event source out to many browsers,
+            but its capacity makes lag and event loss a design decision you must handle explicitly.
+            Remember that keep-alives are idle-only, and that proxies or compression can buffer the
+            stream into uselessness.
+          </p>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      // Copy buttons: copy the raw text of the sibling <code> block.
+      document.querySelectorAll(".copy").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var block = btn.closest(".code");
+          var code = block ? block.querySelector("code") : null;
+          if (!code) return;
+          var text = code.textContent;
+          function done() {
+            var old = btn.textContent;
+            btn.textContent = "Copied";
+            setTimeout(function () {
+              btn.textContent = old;
+            }, 1200);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, fallback);
+          } else {
+            fallback();
+          }
+          function fallback() {
+            var range = document.createRange();
+            range.selectNodeContents(code);
+            var sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            try {
+              document.execCommand("copy");
+              done();
+            } catch (e) {}
+            sel.removeAllRanges();
+          }
+        });
+      });
+
+      // Highlight code, then restore the requested line highlights. Prism replaces
+      // innerHTML, so marks are applied afterwards using absolute text offsets.
+      function lineRanges(code) {
+        var spec = code.getAttribute("data-mark");
+        if (!spec) return [];
+        var lines = code.textContent.split("\n");
+        var starts = [];
+        var offset = 0;
+        lines.forEach(function (line) {
+          starts.push(offset);
+          offset += line.length + 1;
+        });
+        var ranges = [];
+        spec.split(",").forEach(function (part) {
+          var bits = part.split("-").map(Number);
+          var first = bits[0];
+          var last = bits.length > 1 ? bits[1] : bits[0];
+          if (!first || first > lines.length) return;
+          var from = starts[first - 1];
+          var to = starts[last - 1] + lines[last - 1].length;
+          ranges.push([from, to]);
+        });
+        return ranges;
+      }
+
+      function applyMarks(code) {
+        var ranges = lineRanges(code);
+        if (!ranges.length) return;
+        var walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+        var nodes = [];
+        var pos = 0;
+        while (walker.nextNode()) {
+          var n = walker.currentNode;
+          nodes.push([n, pos, pos + n.data.length]);
+          pos += n.data.length;
+        }
+        nodes.forEach(function (entry) {
+          var node = entry[0];
+          var start = entry[1];
+          var end = entry[2];
+          var hitAny = ranges.some(function (r) {
+            return start < r[1] && end > r[0];
+          });
+          if (!hitAny) return;
+          var text = node.data;
+          var frag = document.createDocumentFragment();
+          var i = 0;
+          while (i < text.length) {
+            var abs = start + i;
+            var hit = null;
+            for (var k = 0; k < ranges.length; k++) {
+              if (abs >= ranges[k][0] && abs < ranges[k][1]) {
+                hit = ranges[k];
+                break;
+              }
+            }
+            if (hit) {
+              var limit = Math.min(text.length, hit[1] - start);
+              var mark = document.createElement("mark");
+              mark.textContent = text.slice(i, limit);
+              frag.appendChild(mark);
+              i = limit;
+            } else {
+              var next = text.length;
+              for (var j = 0; j < ranges.length; j++) {
+                var a = ranges[j][0];
+                if (a > abs) next = Math.min(next, a - start);
+              }
+              frag.appendChild(document.createTextNode(text.slice(i, next)));
+              i = next;
+            }
+          }
+          node.replaceWith(frag);
+        });
+      }
+
+      function highlightAndMark() {
+        if (window.Prism) {
+          window.Prism.highlightAll();
+        }
+        document.querySelectorAll("pre code[data-mark]").forEach(applyMarks);
+      }
+
+      // Theme toggle with persistence.
+      (function () {
+        var root = document.documentElement;
+        var toggle = document.getElementById("theme-toggle");
+        if (!toggle) return;
+        var media = window.matchMedia("(prefers-color-scheme: dark)");
+        function effective() {
+          return root.getAttribute("data-theme") || (media.matches ? "dark" : "light");
+        }
+        function paint() {
+          toggle.textContent = effective() === "dark" ? "Light mode" : "Dark mode";
+        }
+        toggle.addEventListener("click", function () {
+          var next = effective() === "dark" ? "light" : "dark";
+          root.setAttribute("data-theme", next);
+          try {
+            localStorage.setItem("theme", next);
+          } catch (e) {}
+          paint();
+        });
+        if (media.addEventListener) media.addEventListener("change", paint);
+        paint();
+      })();
+
+      // Prism loads at the end of the body. If it is cached and already executed,
+      // run now; otherwise run on load.
+      if (document.readyState === "complete") {
+        highlightAndMark();
+      } else {
+        window.addEventListener("load", highlightAndMark);
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/components/prism-rust.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.30.0/components/prism-bash.min.js"></script>
+  </body>
+</html>
