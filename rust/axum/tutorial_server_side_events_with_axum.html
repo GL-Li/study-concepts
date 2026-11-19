@@ -520,9 +520,9 @@
           <a href="#connection-lifecycle">Connection Lifecycle</a>
           <a href="#streams">Rust Streams, Briefly</a>
           <a href="#broadcast">Fan-out with broadcast</a>
-          <a href="#bridging">Channel → Stream → Sse</a>
-          <a href="#sse-response">Building the Response</a>
-          <a href="#producer">The Producer Task</a>
+          <a href="#bridging">One Stream per Connection</a>
+          <a href="#sse-response">The Response Stays Open</a>
+          <a href="#producer">The Source Is Not HTTP</a>
           <a href="#client">The Browser Client</a>
           <a href="#pitfalls">Common Pitfalls</a>
           <a href="#takeaways">Key Takeaways</a>
@@ -593,9 +593,10 @@ data: tick #5</code></pre>
           </p>
           <div class="note">
             <p>
-              <strong>What to observe:</strong> the response never ends — this is one HTTP request
-              carrying an unbounded body. Stop the server and the browser status becomes
-              <em>reconnecting…</em>; restart it and events resume automatically.
+              <strong>What to observe:</strong> the response stays open instead of completing —
+              this is one HTTP request carrying an open-ended body. Stop the server and the response
+              ends; the browser status becomes <em>reconnecting…</em>, and events resume when it
+              restarts.
             </p>
           </div>
         </section>
@@ -603,15 +604,15 @@ data: tick #5</code></pre>
         <section id="what-you-learn">
           <h2>What You'll Learn</h2>
           <ul>
-            <li>What an SSE endpoint really is on the wire, and how it differs from WebSockets and polling.</li>
-            <li>The <code>text/event-stream</code> frame format: <code>data</code>, <code>event</code>, <code>id</code>, <code>retry</code>, and the blank-line dispatch rule.</li>
-            <li>The Rust <code>Stream</code> trait and <code>StreamExt</code> adapters — the async analog of <code>Iterator</code>.</li>
-            <li>Fanning one event out to many browsers with a Tokio <code>broadcast</code> channel, including lagging-subscriber semantics.</li>
-            <li>Bridging a channel into axum with <code>BroadcastStream</code>, <code>filter_map</code>, and <code>Infallible</code>.</li>
-            <li>axum's <code>Sse</code>, <code>Event</code>, and <code>KeepAlive</code> response types.</li>
-            <li>Driving events from a background <code>tokio::spawn</code> task with shared <code>State</code>.</li>
-            <li>The browser <code>EventSource</code> lifecycle: named events, auto-reconnect, and <code>Last-Event-ID</code>.</li>
-            <li>The production traps: buffering proxies, compression, silent event loss, and idle-only keep-alives.</li>
+            <li>Why an SSE endpoint is one long-lived HTTP response rather than a stream of requests, and how that differs from WebSockets and polling.</li>
+            <li>Why the <code>text/event-stream</code> frame format needs a blank dispatch line, and what <code>data</code>, <code>event</code>, <code>id</code>, and <code>retry</code> each control on the client.</li>
+            <li>Why an open-ended response does not block a thread: the body is an async stream, and <code>Pending</code> parks the task instead of spinning.</li>
+            <li>Why fan-out needs one independent receiver per connection, and why a broadcast channel provides exactly that.</li>
+            <li>Why channel capacity is a data-loss policy, and what a lagging subscriber experiences.</li>
+            <li>Why an open-ended response still needs idle keep-alives, and when those keep-alives appear.</li>
+            <li>Why the event source can be a plain task with no knowledge of HTTP.</li>
+            <li>Why <code>EventSource</code> reconnects on its own, and why reconnection restores the transport but not the missed data.</li>
+            <li>Why proxies and compression can silently break SSE even when the Rust code is correct.</li>
           </ul>
         </section>
 
@@ -621,7 +622,8 @@ data: tick #5</code></pre>
             Everything lives in one file. A background task ticks once per second and publishes each
             tick into a broadcast channel; every open <code>/events</code> connection subscribes and
             streams the ticks out as SSE frames. <code>/</code> serves a tiny page that consumes the
-            stream with <code>EventSource</code>.
+            stream with <code>EventSource</code>. The payload is only a counter; everything else
+            exists to make the concepts observable.
           </p>
           <div class="code">
             <div class="code-top"><span>src/main.rs</span><button class="copy" type="button">Copy</button></div>
@@ -640,23 +642,17 @@ use futures_util::{Stream, StreamExt};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
-#[derive(Clone)]
-struct Tick {
-    n: u64,
-    text: String,
-}
-
-type Ticks = broadcast::Sender&lt;Tick&gt;;
+type Ticks = broadcast::Sender&lt;u64&gt;;
 
 async fn events(State(tx): State&lt;Ticks&gt;) -&gt; Sse&lt;impl Stream&lt;Item = Result&lt;Event, Infallible&gt;&gt;&gt; {
     let rx = tx.subscribe();
 
     let stream = BroadcastStream::new(rx).filter_map(|msg| async move {
         match msg {
-            Ok(tick) =&gt; Some(Ok(Event::default()
+            Ok(n) =&gt; Some(Ok(Event::default()
                 .event("tick")
-                .id(tick.n.to_string())
-                .data(tick.text))),
+                .id(n.to_string())
+                .data(format!("tick #{n}")))),
             Err(err) =&gt; {
                 eprintln!("subscriber fell behind: {err}");
                 None
@@ -673,7 +669,7 @@ async fn page() -&gt; Html&lt;&amp;'static str&gt; {
 
 #[tokio::main]
 async fn main() {
-    let (tx, _) = broadcast::channel::&lt;Tick&gt;(16);
+    let (tx, _) = broadcast::channel::&lt;u64&gt;(16);
 
     let producer = tx.clone();
     tokio::spawn(async move {
@@ -682,11 +678,7 @@ async fn main() {
         loop {
             ticker.tick().await;
             n += 1;
-            let tick = Tick {
-                n,
-                text: format!("tick #{n}"),
-            };
-            let _ = producer.send(tick); // Err means nobody is listening yet
+            let _ = producer.send(n); // Err means nobody is listening yet
         }
     });
 
@@ -731,7 +723,7 @@ const PAGE: &amp;str = r##"&lt;!doctype html&gt;
           <h2>SSE in One Picture</h2>
           <p>
             An SSE endpoint is not a series of requests. It is <strong>one ordinary GET request whose
-            response body never finishes</strong>.
+            response body stays open until it is closed or the connection drops</strong>.
           </p>
           <figure>
             <svg viewBox="0 0 760 230" role="img" aria-label="Browser sends one GET request to the axum handler, which keeps writing text/event-stream events back over the same response.">
@@ -759,7 +751,7 @@ const PAGE: &amp;str = r##"&lt;!doctype html&gt;
 
               <text x="380" y="214" text-anchor="middle" fill="var(--muted)" font-size="12.5">One long-lived response, many events.</text>
             </svg>
-            <figcaption>The request completes its headers once; the body stays open and is filled with events.</figcaption>
+            <figcaption>The request completes its headers once; the body stays open and is filled with events until the connection closes.</figcaption>
           </figure>
           <ul>
             <li>The server answers <code>200 OK</code> with <code>Content-Type: text/event-stream</code> and then keeps writing UTF-8 text frames.</li>
@@ -941,8 +933,10 @@ use tokio_stream::wrappers::BroadcastStream;</code></pre>
         <section id="broadcast">
           <h2>Fan-out with a broadcast Channel</h2>
           <p>
-            Each browser needs its own stream, but all streams must see the same events. A Tokio
-            <strong>broadcast</strong> channel does exactly that: one sender, many independent receivers.
+            Every browser needs its own response stream, yet all of them must see the same events.
+            The problem is therefore one of <em>fan-out</em>: one source, many independent consumers.
+            A Tokio <strong>broadcast</strong> channel is the seam that makes the source unaware of
+            how many clients exist.
           </p>
           <figure>
             <svg viewBox="0 0 760 320" role="img" aria-label="A producer task sends ticks into a broadcast channel, which delivers a clone to three separate receivers, each feeding an SSE response and a browser.">
@@ -954,11 +948,11 @@ use tokio_stream::wrappers::BroadcastStream;</code></pre>
               <rect x="20" y="120" width="170" height="82" rx="9" fill="var(--bg-sunken)" stroke="var(--border)" />
               <text x="105" y="150" text-anchor="middle" fill="var(--text-strong)" font-size="13.5" font-weight="700">producer task</text>
               <text x="105" y="172" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">interval(1s)</text>
-              <text x="105" y="190" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">tx.send(tick)</text>
+              <text x="105" y="190" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">tx.send(n)</text>
 
               <rect x="280" y="96" width="180" height="130" rx="9" fill="var(--bg-sunken)" stroke="var(--accent)" stroke-width="2" />
               <text x="370" y="126" text-anchor="middle" fill="var(--text-strong)" font-size="13.5" font-weight="700">broadcast::channel(16)</text>
-              <text x="370" y="150" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">Sender&lt;Tick&gt;</text>
+              <text x="370" y="150" text-anchor="middle" fill="var(--text)" font-size="12" font-family="monospace">Sender&lt;u64&gt;</text>
               <text x="370" y="170" text-anchor="middle" fill="var(--muted)" font-size="11.5">every message cloned</text>
               <text x="370" y="188" text-anchor="middle" fill="var(--muted)" font-size="11.5">to every receiver</text>
               <text x="370" y="208" text-anchor="middle" fill="var(--muted)" font-size="11.5">capacity = 16</text>
@@ -1001,31 +995,40 @@ use tokio_stream::wrappers::BroadcastStream;</code></pre>
               </tbody>
             </table>
           </div>
+          <div class="code">
+            <div class="code-top"><span>src/main.rs:16, 43, 19</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-rust" data-mark="1,3,5">type Ticks = broadcast::Sender&lt;u64&gt;;
+...
+let (tx, _) = broadcast::channel::&lt;u64&gt;(16);
+...
+let rx = tx.subscribe();</code></pre>
+          </div>
           <ul>
             <li><code>broadcast::channel(16)</code> returns a <code>Sender</code> and one initial <code>Receiver</code>; <code>tx.subscribe()</code> creates a new receiver for each connection.</li>
-            <li><code>T</code> must be <code>Clone</code>, because the same value is cloned into every receiver. Here <code>Tick</code> derives <code>Clone</code>.</li>
+            <li><code>T</code> must be <code>Clone</code>, because the same value is cloned into every receiver. Here <code>u64</code> is <code>Clone</code>.</li>
             <li>The capacity bounds how far behind any receiver may fall: the channel keeps at most 16 messages, so a receiver that falls further behind is told it lagged and <strong>loses the oldest events</strong>. Losing events is intentional; the alternative is unbounded memory growth.</li>
             <li><code>Sender::send</code> only fails when there are <strong>zero</strong> receivers. At startup, before any browser connects, that is normal — hence <code>let _ =</code>.</li>
           </ul>
         </section>
 
         <section id="bridging">
-          <h2>Bridge: Channel → Stream → Sse</h2>
+          <h2>One Stream per Connection</h2>
           <p>
-            The handler is the adapter layer: it subscribes a fresh receiver and turns it into a
-            per-connection stream of <code>Event</code> values.
+            The handler is where a connection becomes an independent consumer. It subscribes a fresh
+            receiver, then maps channel items into SSE frames; everything downstream of that point is
+            private to this one response.
           </p>
           <div class="code">
-            <div class="code-top"><span>src/main.rs:24-41</span><button class="copy" type="button">Copy</button></div>
+            <div class="code-top"><span>src/main.rs:18-35</span><button class="copy" type="button">Copy</button></div>
             <pre><code class="language-rust" data-mark="2,4,7-9,17">async fn events(State(tx): State&lt;Ticks&gt;) -&gt; Sse&lt;impl Stream&lt;Item = Result&lt;Event, Infallible&gt;&gt;&gt; {
     let rx = tx.subscribe();
 
     let stream = BroadcastStream::new(rx).filter_map(|msg| async move {
         match msg {
-            Ok(tick) =&gt; Some(Ok(Event::default()
+            Ok(n) =&gt; Some(Ok(Event::default()
                 .event("tick")
-                .id(tick.n.to_string())
-                .data(tick.text))),
+                .id(n.to_string())
+                .data(format!("tick #{n}")))),
             Err(err) =&gt; {
                 eprintln!("subscriber fell behind: {err}");
                 None
@@ -1038,8 +1041,8 @@ use tokio_stream::wrappers::BroadcastStream;</code></pre>
           </div>
           <ul>
             <li><code>State&lt;Ticks&gt;</code> extracts a clone of the sender stored in the router. <code>tx.subscribe()</code> must happen inside the handler so each connection gets its own receiver.</li>
-            <li><code>BroadcastStream::new(rx)</code> adapts the receiver into <code>Stream&lt;Item = Result&lt;Tick, BroadcastStreamRecvError&gt;&gt;</code>. The error case is <code>Lagged(n)</code>.</li>
-            <li><code>filter_map</code> handles both variants: a good tick becomes <code>Some(Ok(event))</code>; a lag error becomes <code>None</code> and is skipped. After that, the stream cannot fail, so the error type is <code>Infallible</code>.</li>
+            <li><code>BroadcastStream::new(rx)</code> adapts the receiver into <code>Stream&lt;Item = Result&lt;u64, BroadcastStreamRecvError&gt;&gt;</code>. The error case is <code>Lagged(n)</code>.</li>
+            <li><code>filter_map</code> handles both variants: a good value becomes <code>Some(Ok(event))</code>; a lag error becomes <code>None</code> and is skipped. After that, the stream cannot fail, so the error type is <code>Infallible</code>.</li>
             <li>The return type <code>Sse&lt;impl Stream&lt;Item = Result&lt;Event, Infallible&gt;&gt;&gt;</code> says “some unnamed concrete stream type” — the handler does not need to name <code>FilterMap&lt;BroadcastStream&lt;…&gt;, …&gt;</code>.</li>
             <li>The receiver lives inside the returned stream. When the browser disconnects, hyper drops the body, the stream is dropped, and the receiver is cleaned up automatically.</li>
           </ul>
@@ -1053,25 +1056,26 @@ use tokio_stream::wrappers::BroadcastStream;</code></pre>
         </section>
 
         <section id="sse-response">
-          <h2>Building the Response</h2>
+          <h2>The Response Stays Open</h2>
           <p>
-            axum gives you three small types: <code>Event</code> formats one frame,
-            <code>Sse</code> turns a stream into an HTTP response, and <code>KeepAlive</code> guards
-            quiet connections.
+            An SSE response is ordinary HTTP that stays open rather than completing. The status and
+            headers are sent once; the body stays open and is filled as the stream yields values.
+            The client therefore learns about failure only when the connection breaks, and any
+            intermediary may drop an idle connection unless something keeps it warm.
           </p>
           <div class="code">
-            <div class="code-top"><span>src/main.rs:29-32, 40</span><button class="copy" type="button">Copy</button></div>
-            <pre><code class="language-rust" data-mark="1-4,6">            Ok(tick) =&gt; Some(Ok(Event::default()
+            <div class="code-top"><span>src/main.rs:23-26, 34</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-rust" data-mark="1-4,6">            Ok(n) =&gt; Some(Ok(Event::default()
                 .event("tick")
-                .id(tick.n.to_string())
-                .data(tick.text))),
+                .id(n.to_string())
+                .data(format!("tick #{n}")))),
             ...
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(10)))</code></pre>
           </div>
           <ul>
-            <li><code>Event::default().event("tick")</code> sets the <code>event:</code> field, <code>.id(...)</code> sets <code>id:</code>, and <code>.data(...)</code> sets <code>data:</code>. Add <code>.retry(Duration)</code> to send a reconnect-delay hint.</li>
-            <li>Implementing <code>IntoResponse</code>, <code>Sse</code> sets <code>Content-Type: text/event-stream</code> and <code>Cache-Control: no-cache</code> for you, then streams the body.</li>
-            <li><code>KeepAlive</code> sends a comment frame (<code>:</code>) so idle connections and intermediaries do not time out. Default is every 15 seconds; here it is 10.</li>
+            <li>A frame is just text. <code>Event</code> is a formatter: <code>.event("tick")</code>, <code>.id(...)</code>, and <code>.data(...)</code> choose which lines appear before the blank dispatch line. Add <code>.retry(Duration)</code> to send a reconnect-delay hint.</li>
+            <li><code>Sse</code> is the adapter from stream items to an HTTP response. It sets <code>Content-Type: text/event-stream</code> and <code>Cache-Control: no-cache</code>; yielding an item is the only way bytes leave.</li>
+            <li>A quiet stream looks identical to a dead one to a proxy. <code>KeepAlive</code> emits a comment frame (<code>:</code>) so idle connections survive; the default interval is 15 seconds, here 10.</li>
             <li><strong>Subtle but important:</strong> keep-alives are only emitted while the stream is <em>idle</em>. Each real event resets the timer. With a tick every second you will never see one — that is correct, not a bug. Pause the producer for more than 10 seconds to observe it.</li>
           </ul>
           <div class="note">
@@ -1084,16 +1088,18 @@ use tokio_stream::wrappers::BroadcastStream;</code></pre>
         </section>
 
         <section id="producer">
-          <h2>The Producer Task</h2>
+          <h2>The Source Is Not HTTP</h2>
           <p>
-            The event source is a plain Tokio task. It knows nothing about HTTP; it only publishes
-            ticks into the channel.
+            What happened and how it is delivered are separate concerns. The producer only puts
+            values into the channel; it is blind to whether zero, one, or many clients are
+            connected. That is why the same source could drive SSE, WebSockets, or a background job
+            without changing.
           </p>
           <div class="code">
-            <div class="code-top"><span>src/main.rs:47-69</span><button class="copy" type="button">Copy</button></div>
-            <pre><code class="language-rust" data-mark="3,6,10,16,23">#[tokio::main]
+            <div class="code-top"><span>src/main.rs:41-59</span><button class="copy" type="button">Copy</button></div>
+            <pre><code class="language-rust" data-mark="3,6,10,12,19">#[tokio::main]
 async fn main() {
-    let (tx, _) = broadcast::channel::&lt;Tick&gt;(16);
+    let (tx, _) = broadcast::channel::&lt;u64&gt;(16);
 
     let producer = tx.clone();
     tokio::spawn(async move {
@@ -1102,11 +1108,7 @@ async fn main() {
         loop {
             ticker.tick().await;
             n += 1;
-            let tick = Tick {
-                n,
-                text: format!("tick #{n}"),
-            };
-            let _ = producer.send(tick); // Err means nobody is listening yet
+            let _ = producer.send(n); // Err means nobody is listening yet
         }
     });
 
@@ -1117,11 +1119,11 @@ async fn main() {
 }</code></pre>
           </div>
           <ul>
-            <li><code>tokio::spawn</code> detaches the producer onto the runtime. The task captures a cloned sender, so it is <code>'static</code> and outlives <code>main</code>'s scope.</li>
-            <li><code>tokio::time::interval</code> ticks forever; its first tick completes immediately, so the counter starts at 1 right away.</li>
-            <li><code>with_state(tx)</code> stores the sender in the router. Every handler call receives a clone through <code>State&lt;Ticks&gt;</code>, which is why the sender type must be <code>Clone</code>.</li>
-            <li>The initial receiver returned by <code>broadcast::channel</code> is dropped (<code>_</code>). Until the first browser subscribes, <code>send</code> returns <code>Err</code> — ignored on purpose.</li>
-            <li>In a real app the producer could be a database change feed, a job progress reporter, or a webhook consumer; the SSE layer stays identical.</li>
+            <li><code>tokio::spawn</code> detaches the producer onto the runtime. Because it captures a cloned sender, it owns everything it needs and can outlive <code>main</code>'s scope.</li>
+            <li><code>interval</code> ticks forever and its first tick completes immediately, so the counter starts at 1 right away. The producer never waits for a client.</li>
+            <li><code>with_state(tx)</code> stores the sender in the router; each request receives a clone through <code>State&lt;Ticks&gt;</code>. The state must be <code>Clone</code> because it is copied per request.</li>
+            <li>The initial receiver returned by <code>broadcast::channel</code> is dropped (<code>_</code>). Until the first browser subscribes, <code>send</code> returns <code>Err</code> — a normal zero-receiver state, not a failure.</li>
+            <li>The source could be a database change feed, a job progress reporter, or a webhook consumer; the SSE layer would stay identical.</li>
           </ul>
         </section>
 
@@ -1165,7 +1167,7 @@ async fn main() {
             <figcaption><code>EventSource</code> reconnects itself; transient failures never reach <code>CLOSED</code>.</figcaption>
           </figure>
           <div class="code">
-            <div class="code-top"><span>src/main.rs:85-96</span><button class="copy" type="button">Copy</button></div>
+            <div class="code-top"><span>src/main.rs:75-86</span><button class="copy" type="button">Copy</button></div>
             <pre><code class="language-rust" data-mark="4,5-7,9">    &lt;script&gt;
       const statusEl = document.getElementById("status");
       const logEl = document.getElementById("log");
@@ -1191,43 +1193,43 @@ async fn main() {
         <section id="pitfalls">
           <h2>Common Pitfalls</h2>
           <div class="note pitfall">
-            <p><strong>1. Expecting keep-alives on a busy stream.</strong> <code>KeepAlive</code> is idle-triggered; it resets whenever a real event is sent. To force a heartbeat, emit your own comment event on a timer. To verify the feature, stop sending events for longer than the keep-alive interval.</p>
+            <p><strong>1. “Keep-alive means the server keeps sending heartbeats.”</strong> It does not: <code>KeepAlive</code> is idle-triggered and resets whenever a real event is sent. To force a heartbeat on a busy stream, emit your own comment event on a timer. To verify the feature, stop sending events for longer than the keep-alive interval.</p>
           </div>
           <div class="note pitfall">
-            <p><strong>2. Compression and proxy buffering swallow events.</strong> Compression middleware may hold back small chunks, and reverse proxies often buffer responses by default. Disable compression for <code>text/event-stream</code>, and configure nginx-style proxies with <code>proxy_buffering off</code> (plus <code>X-Accel-Buffering: no</code> if needed). axum sets <code>Cache-Control: no-cache</code> but cannot configure your proxy.</p>
+            <p><strong>2. “If the Rust code is correct, events will arrive.”</strong> Compression middleware may hold back small chunks, and reverse proxies often buffer responses by default. Disable compression for <code>text/event-stream</code>, and configure nginx-style proxies with <code>proxy_buffering off</code> (plus <code>X-Accel-Buffering: no</code> if needed). axum sets <code>Cache-Control: no-cache</code> but cannot configure your proxy.</p>
           </div>
           <div class="note pitfall">
-            <p><strong>3. Ignoring <code>Lagged</code>.</strong> Broadcast drops old messages for slow receivers and tells you only via <code>Err(Lagged(n))</code>. If you propagate that error, the SSE response ends. If you silently ignore it, clients miss data. Choose deliberately; size the channel and monitor lag.</p>
+            <p><strong>3. “<code>Lagged</code> is either fatal or safe to ignore.”</strong> Broadcast drops old messages for slow receivers and tells you only via <code>Err(Lagged(n))</code>. If you propagate that error, the SSE response ends. If you silently ignore it, clients miss data. Choose deliberately; size the channel and monitor lag.</p>
           </div>
           <div class="note pitfall">
-            <p><strong>4. Treating <code>send</code> failure as fatal.</strong> At startup there are no receivers, so <code>send</code> returns <code>Err</code> even though everything is fine. Ignore it, or use <code>tx.receiver_count()</code> to check.</p>
+            <p><strong>4. “<code>send</code> returned <code>Err</code>, so the channel is broken.”</strong> At startup there are no receivers, so <code>send</code> returns <code>Err</code> even though everything is fine. Ignore it, or use <code>tx.receiver_count()</code> to check.</p>
           </div>
           <div class="note pitfall">
-            <p><strong>5. Returning errors through the stream.</strong> The stream item is <code>Result&lt;Event, E&gt;</code>; an <code>Err</code> terminates the response. After mapping lag to <code>None</code>, <code>Infallible</code> documents that this stream cannot fail.</p>
+            <p><strong>5. “An error in the stream can be recovered from.”</strong> The stream item is <code>Result&lt;Event, E&gt;</code>; an <code>Err</code> terminates the response. After mapping lag to <code>None</code>, <code>Infallible</code> documents that this stream cannot fail.</p>
           </div>
           <div class="note pitfall">
-            <p><strong>6. Hand-rolling frames without the blank line.</strong> If you implement the protocol manually (instead of using <code>Event</code>), a missing empty line means the browser buffers fields and shows nothing. Similarly, one <code>data:</code> line per newline is required. <code>Event</code> handles both.</p>
+            <p><strong>6. “The blank line is just formatting.”</strong> It is the dispatch boundary. If you implement the protocol manually (instead of using <code>Event</code>), a missing empty line means the browser buffers fields and shows nothing. Similarly, one <code>data:</code> line per newline is required. <code>Event</code> handles both.</p>
           </div>
           <div class="note pitfall">
-            <p><strong>7. Sending binary or non-UTF-8 data.</strong> SSE is text-only. Encode bytes as base64 (and decode client-side), or use a WebSocket.</p>
+            <p><strong>7. “SSE can carry arbitrary bytes.”</strong> SSE is text-only. Encode bytes as base64 (and decode client-side), or use a WebSocket.</p>
           </div>
           <div class="note pitfall">
-            <p><strong>8. Holding a <code>std::sync</code> lock across <code>.await</code>.</strong> SSE handlers are async and long-lived. Holding a blocking mutex guard across an await point can deadlock or stall the runtime; drop the guard before awaiting, or use <code>tokio::sync</code> primitives.</p>
+            <p><strong>8. “Async makes locks harmless.”</strong> SSE handlers are async and long-lived. Holding a blocking <code>std::sync</code> mutex guard across an await point can deadlock or stall the runtime; drop the guard before awaiting, or use <code>tokio::sync</code> primitives.</p>
           </div>
           <div class="note pitfall">
-            <p><strong>9. Forgetting cross-origin rules.</strong> <code>EventSource</code> is subject to CORS. Cross-origin use needs <code>Access-Control-Allow-Origin</code>, and cookie auth needs <code>withCredentials</code> plus the right CORS credentials headers.</p>
+            <p><strong>9. “CORS only affects reading the response.”</strong> <code>EventSource</code> is subject to CORS. Cross-origin use needs <code>Access-Control-Allow-Origin</code>, and cookie auth needs <code>withCredentials</code> plus the right CORS credentials headers.</p>
           </div>
         </section>
 
         <section id="takeaways">
           <h2>Key Takeaways</h2>
           <p>
-            An SSE endpoint is one long-lived HTTP response carrying a stream of newline-delimited
-            events, and axum models that body as a Rust <code>Stream</code> wrapped in <code>Sse</code>.
-            A broadcast channel is the simplest way to fan one event source out to many browsers,
-            but its capacity makes lag and event loss a design decision you must handle explicitly.
-            Remember that keep-alives are idle-only, and that proxies or compression can buffer the
-            stream into uselessness.
+            An SSE endpoint is one HTTP response whose body stays open rather than completing, so
+            the server's job is to keep producing bytes rather than to answer repeatedly. Fan-out
+            works because each connection gets its own stream fed from one shared source, and the
+            channel's capacity makes event loss a deliberate policy. Keep-alives protect only idle
+            connections, and proxies or compression can quietly buffer the stream even when the Rust
+            code is correct.
           </p>
         </section>
       </main>
