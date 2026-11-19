@@ -9,6 +9,7 @@ Basics
 
 Advanced
 - WebSocket allow bidirectional real time communication between a client and a server, thus between two or more clients and a server
+- SSE: A SSE endpoint accepts a normal HTTP request and sends back a long-lived HTTP response where the body is a stream of bytes. 
 
 
 ## tutorial_rust_axum.html
@@ -230,3 +231,19 @@ https://www.youtube.com/watch?v=hd_d-K-jDFM
     ```
 - Hereafter WebSocket uses Tcp connection established by the HTTP request for bidirectional communication between client and server. 
 
+
+## tutorial_server_side_events_with_axum.html
+
+A SSE endpoint accepts a normal HTTP request and sends back a long-lived HTTP response where the body is a stream of bytes. Clients process the stream incrementally.
+
+### events in a stream
+An event is a few `field: value` pairs lines followed by a blank line.
+
+```
+event: tick
+id: 42
+data: tick #42
+
+```
+
+Above example lists event name (tick), last evernt id (42) and event content data (tick #42). A stream is a tream of such events.

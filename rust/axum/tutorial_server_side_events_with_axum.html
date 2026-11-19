@@ -517,6 +517,7 @@
           <a href="#example">The Example</a>
           <a href="#protocol">SSE in One Picture</a>
           <a href="#wire-format">The Wire Format</a>
+          <a href="#connection-lifecycle">Connection Lifecycle</a>
           <a href="#streams">Rust Streams, Briefly</a>
           <a href="#broadcast">Fan-out with broadcast</a>
           <a href="#bridging">Channel → Stream → Sse</a>
@@ -840,6 +841,51 @@ const PAGE: &amp;str = r##"&lt;!doctype html&gt;
           </div>
         </section>
 
+        <section id="connection-lifecycle">
+          <h2>Connection Lifecycle, in Plain English</h2>
+          <p>
+            The whole discussion reduces to four facts. Keep these straight and most SSE confusion
+            disappears.
+          </p>
+          <ol>
+            <li>
+              <strong>One HTTP response.</strong> SSE is a single GET. The status and headers are
+              sent once, then the server keeps appending bytes to the same response body. It is not
+              a series of responses, and the client does not poll.
+            </li>
+            <li>
+              <strong>The client reads incrementally.</strong> The browser's HTTP stack hands body
+              bytes to <code>EventSource</code> as they arrive. <code>EventSource</code> buffers
+              them and dispatches an event only when it sees the blank line. HTTP chunk boundaries
+              and SSE event boundaries are unrelated.
+            </li>
+            <li>
+              <strong>The server closes the stream.</strong> There is no SSE “end” event. When your
+              stream returns <code>None</code>, hyper writes HTTP/1.1's terminating chunk
+              (<code>0\r\n\r\n</code>) or sets HTTP/2's <code>END_STREAM</code>. The client can
+              abort early with <code>es.close()</code> or by leaving the page, but the normal
+              end-of-body signal is server-driven.
+            </li>
+            <li>
+              <strong>The client reconnects.</strong> If the response ends or the connection fails,
+              <code>EventSource</code> issues a <strong>new</strong> GET after the retry delay
+              (about 3 seconds, or the last <code>retry:</code> hint), sending
+              <code>Last-Event-ID</code> if it saw an <code>id:</code>. Reconnect restores the
+              transport, not the data: the server must replay missed events. A valid SSE response
+              that ends causes an endless close → reconnect loop; answer a reconnect with
+              <code>204</code> to stop it. Silence on an <em>open</em> connection causes no
+              reconnect — keep-alive comments just prevent idle timeouts.
+            </li>
+          </ol>
+          <div class="note">
+            <p>
+              <strong>Rule of thumb:</strong> keep the response open, send bytes when you have
+              something (or a comment when you do not), and use <code>204</code> — not a clean
+              close — to make clients stop.
+            </p>
+          </div>
+        </section>
+
         <section id="streams">
           <h2>Rust Streams, Briefly</h2>
           <p>
@@ -1082,8 +1128,9 @@ async fn main() {
         <section id="client">
           <h2>The Browser Client</h2>
           <p>
-            <code>EventSource</code> does the protocol work: open, parse, and reconnect. You only
-            handle events and connection state.
+            <code>EventSource</code> is the browser's built-in JavaScript API for consuming an SSE
+            endpoint — it opens the request, parses incoming events, and reconnects automatically —
+            so your code only handles events and connection state.
           </p>
           <figure>
             <svg viewBox="0 0 760 220" role="img" aria-label="EventSource state machine: CONNECTING, OPEN, then CLOSED on close, with automatic reconnect from CONNECTING and a Last-Event-ID header sent on reconnect.">
