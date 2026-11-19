@@ -1,0 +1,1064 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authorization + CSRF with Axum &mdash; Tutorial</title>
+<script>
+try {
+  var t = localStorage.getItem("theme");
+  if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+} catch (e) {}
+</script>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+:root {
+  color-scheme: light;
+  --bg: #fdf6e3;
+  --bg-panel: #eee8d5;
+  --bg-code: #eee8d5;
+  --bg-code-head: #e6dfc9;
+  --fg: #657b83;
+  --fg-strong: #586e75;
+  --muted: #93a1a1;
+  --border: #d8d0bb;
+  --link: #268bd2;
+  --link-hover: #2aa198;
+  --mark: rgba(181, 137, 0, .28);
+  --kw: #859900;
+  --str: #2aa198;
+  --num: #d33682;
+  --fn: #268bd2;
+  --ty: #b58900;
+  --com: #93a1a1;
+  --op: #cb4b16;
+  --attr: #6c71c4;
+  --punc: #657b83;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .06);
+  --radius: 10px;
+  --sidebar-w: 250px;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #002b36;
+  --bg-panel: #073642;
+  --bg-code: #073642;
+  --bg-code-head: #0a404d;
+  --fg: #839496;
+  --fg-strong: #93a1a1;
+  --muted: #586e75;
+  --border: #0f4a57;
+  --link: #4fb3e8;
+  --link-hover: #2aa198;
+  --mark: rgba(181, 137, 0, .32);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #002b36;
+    --bg-panel: #073642;
+    --bg-code: #073642;
+    --bg-code-head: #0a404d;
+    --fg: #839496;
+    --fg-strong: #93a1a1;
+    --muted: #586e75;
+    --border: #0f4a57;
+    --link: #4fb3e8;
+    --link-hover: #2aa198;
+    --mark: rgba(181, 137, 0, .32);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  }
+}
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  gap: 36px;
+  align-items: start;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 24px 80px;
+}
+.sidebar {
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  align-self: start;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+.brand {
+  font-weight: 700;
+  color: var(--fg-strong);
+  letter-spacing: .02em;
+  margin-bottom: 12px;
+}
+#theme-toggle {
+  width: 100%;
+  font: inherit;
+  font-size: .84rem;
+  cursor: pointer;
+  color: var(--fg-strong);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  margin-bottom: 10px;
+}
+#theme-toggle:hover { border-color: var(--link); color: var(--link); }
+.toc-title {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  margin: 14px 0 6px;
+}
+nav a {
+  display: block;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--fg);
+  text-decoration: none;
+  font-size: .92rem;
+}
+nav a:hover { background: var(--bg); color: var(--fg-strong); }
+main { max-width: 820px; min-width: 0; }
+header { margin-bottom: 8px; }
+.kicker {
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  font-size: .75rem;
+  color: var(--link);
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+h1 {
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  line-height: 1.15;
+  color: var(--fg-strong);
+  margin: 0 0 10px;
+}
+h2 {
+  font-size: 1.4rem;
+  color: var(--fg-strong);
+  margin: 2.2em 0 .6em;
+  padding-bottom: .25em;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 24px;
+}
+h3 { font-size: 1.08rem; color: var(--fg-strong); margin: 1.4em 0 .4em; }
+p { margin: .7em 0; }
+a { color: var(--link); }
+a:hover { color: var(--link-hover); }
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: .9em;
+  background: var(--bg-panel);
+  padding: .12em .35em;
+  border-radius: 4px;
+}
+pre code { background: none; padding: 0; font-size: .86rem; line-height: 1.55; }
+pre { margin: 0; overflow-x: auto; padding: 14px 16px; }
+.codeblock {
+  margin: 1em 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-code);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.codehead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-code-head);
+  border-bottom: 1px solid var(--border);
+}
+.codehead .lang {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  font-weight: 700;
+}
+.codehead .snippet-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .76rem;
+  color: var(--muted);
+}
+.copy {
+  margin-left: auto;
+  font: inherit;
+  font-size: .78rem;
+  cursor: pointer;
+  color: var(--fg-strong);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+.copy:hover { border-color: var(--link); color: var(--link); }
+mark { background: var(--mark); color: inherit; padding: 0 1px; border-radius: 2px; }
+.lede { font-size: 1.08rem; color: var(--fg-strong); max-width: 70ch; }
+.callout {
+  border-left: 4px solid var(--link);
+  background: var(--bg-panel);
+  padding: 10px 14px;
+  border-radius: 0 8px 8px 0;
+  margin: 1em 0;
+}
+.callout.warn { border-left-color: var(--op); }
+.callout strong { color: var(--fg-strong); }
+table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: .92rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { color: var(--fg-strong); background: var(--bg-panel); }
+tbody tr:hover { background: var(--bg-panel); }
+figure {
+  margin: 1.2em 0;
+  padding: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+figure svg { display: block; width: 100%; height: auto; }
+figcaption { margin-top: 8px; font-size: .85rem; color: var(--muted); text-align: center; }
+ul, ol { padding-left: 1.3em; }
+li { margin: .35em 0; }
+li strong { color: var(--fg-strong); }
+dl.terms { margin: 1em 0; }
+dl.terms dt { font-weight: 700; color: var(--fg-strong); margin-top: .9em; }
+dl.terms dd { margin: .25em 0 0 1.1em; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
+.token.comment, .token.prolog, .token.doctype, .token.cdata { color: var(--com); font-style: italic; }
+.token.punctuation { color: var(--punc); }
+.token.property, .token.tag, .token.constant, .token.symbol, .token.deleted { color: var(--num); }
+.token.boolean, .token.number { color: var(--num); }
+.token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted { color: var(--str); }
+.token.operator, .token.entity, .token.url { color: var(--op); }
+.token.atrule, .token.attr-value, .token.keyword { color: var(--kw); }
+.token.function, .token.class-name { color: var(--fn); }
+.token.regex, .token.important, .token.variable { color: var(--ty); }
+.token.macro, .token.lifetime, .token.attribute { color: var(--attr); }
+.token.important, .token.bold { font-weight: 700; }
+.token.italic { font-style: italic; }
+@media (max-width: 820px) {
+  .wrap { display: block; padding: 16px; }
+  .sidebar { position: static; max-height: none; margin-bottom: 20px; }
+  main { max-width: none; }
+}
+@media print {
+  :root, :root[data-theme="dark"] {
+    --bg: #fff; --bg-panel: #fff; --bg-code: #fff; --bg-code-head: #fff;
+    --fg: #000; --fg-strong: #000; --muted: #444; --border: #ccc;
+    --link: #0645ad; --mark: #fff3a3; color-scheme: light;
+  }
+  body { font-size: 11pt; }
+  .wrap { display: block; max-width: none; padding: 0; }
+  .sidebar, #theme-toggle, .copy { display: none !important; }
+  main { max-width: none; }
+  a { color: #0645ad; text-decoration: underline; }
+  figure, table, .callout, .codeblock, pre { break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; }
+}
+
+.why {
+  font-size: 1.02rem;
+  color: var(--fg-strong);
+  border-left: 3px solid var(--link);
+  padding-left: 12px;
+  margin: 1em 0;
+}
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1/prism.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-rust.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-toml.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+<aside class="sidebar">
+<div class="brand">Axum Tutorial</div>
+<button id="theme-toggle" type="button">Toggle theme</button>
+<nav aria-label="Table of contents">
+<div class="toc-title">Contents</div>
+<a href="#how-to-use">How to Use</a><a href="#what-you-learn">What You'll Learn</a><a href="#key-terms">Key terms</a><a href="#example">The Example</a><a href="#authn-vs-authz">Authentication vs authorization</a><a href="#session-identity">Session identity: a cookie is a key</a><a href="#rbac">RBAC: Role-Based Access Control</a><a href="#ownership">Ownership: authorize the object</a><a href="#how-csrf-works">CSRF: Cross-Site Request Forgery</a><a href="#synchronizer-token">Synchronizer token: proof of intent</a><a href="#double-submit">Double-submit cookie: stateless defense</a><a href="#samesite">SameSite, HttpOnly, Secure</a><a href="#xss">XSS: Cross-Site Scripting</a><a href="#api-csrf">APIs and header tokens</a><a href="#pitfalls">Common pitfalls</a><a href="#takeaways">Key Takeaways</a></nav>
+</aside>
+<main>
+<header>
+<p class="kicker">Rust &middot; axum 0.8</p>
+<h1>Authorization + CSRF with Axum</h1>
+<p class="lede">Authentication tells you <em>who</em> is calling. Authorization decides <em>what</em> they may do. CSRF protection proves that a state-changing request came from your page, not from an attacker's form riding the victim's cookies.</p>
+</header>
+<section id="how-to-use"><h2>How to Use</h2><p>This example is API-only, so <code>curl</code> is the whole interface. That is deliberate: the browser behaviour that makes CSRF possible (cookies attached automatically to requests for a site) is exactly what these commands reproduce.</p>
+<p>Create the project and add the exact dependency versions the example uses:</p><div class="codeblock"><div class="codehead"><span class="lang">bash</span><button class="copy" type="button">Copy</button></div><pre><code class="language-bash">cargo new authz_csrf --bin
+cd authz_csrf
+cargo add axum@0.8.9
+cargo add axum-extra@0.12.6 --features cookie
+cargo add serde@1.0.229 --features derive
+cargo add tokio@1.54.1 --features full
+cargo add uuid@1.29.3 --features v4</code></pre></div><p>Replace <code>src/main.rs</code> with the full program from <a href="#example">The Example</a>, then run it:</p><div class="codeblock"><div class="codehead"><span class="lang">bash</span><button class="copy" type="button">Copy</button></div><pre><code class="language-bash">cargo run</code></pre></div><p>You should see:</p><div class="codeblock"><div class="codehead"><span class="lang">text</span><button class="copy" type="button">Copy</button></div><pre><code class="language-text">listening on http://127.0.0.1:3000</code></pre></div><h3>Observe the concepts</h3>
+<p>Run these requests in order. Each one isolates a different failure or success:</p><div class="codeblock"><div class="codehead"><span class="lang">bash</span><button class="copy" type="button">Copy</button></div><pre><code class="language-bash">BASE=http://127.0.0.1:3000
+
+# 1. Authentication: no session cookie -&gt; 401.
+curl -s -o /dev/null -w 'no session: %{http_code}\n' "$BASE/notes"
+
+# 2. Log in as alice. Cookies are saved; the CSRF token is readable.
+curl -s -c alice.jar -d 'username=alice' "$BASE/login"
+ALICE_CSRF=$(awk '$6=="csrf"{print $7}' alice.jar)
+
+# 3. Ownership on reads: alice sees only her own note.
+curl -s -b alice.jar "$BASE/notes"
+
+# 4. Ownership on writes: a valid token does not let alice delete bob's note.
+curl -s -b alice.jar -o /dev/null -w 'not my note: %{http_code}\n' \
+  -d "csrf=$ALICE_CSRF" "$BASE/notes/2/delete"
+
+# 5. CSRF: alice deleting her OWN note without the token -&gt; 403.
+curl -s -b alice.jar -o /dev/null -w 'no token: %{http_code}\n' \
+  -d '' "$BASE/notes/1/delete"
+
+# 6. RBAC: alice cannot reach the admin page.
+curl -s -b alice.jar -o /dev/null -w 'admin as alice: %{http_code}\n' "$BASE/admin"
+
+# 7. Log in as admin; admins see every note, including bob's script payload.
+curl -s -c admin.jar -d 'username=admin' "$BASE/login" &gt;/dev/null
+ADMIN_CSRF=$(awk '$6=="csrf"{print $7}' admin.jar)
+curl -s -b admin.jar "$BASE/notes"
+
+# 8. RBAC: the admin page now succeeds.
+curl -s -b admin.jar -o /dev/null -w 'admin as admin: %{http_code}\n' "$BASE/admin"
+
+# 9. Admin override: an admin may delete another user's note.
+curl -s -b admin.jar -o /dev/null -w 'admin delete: %{http_code}\n' \
+  -d "csrf=$ADMIN_CSRF" "$BASE/notes/2/delete"</code></pre></div><p>Expected output:</p><div class="codeblock"><div class="codehead"><span class="lang">text</span><button class="copy" type="button">Copy</button></div><pre><code class="language-text">no session: 401
+logged in as alice
+&lt;h1&gt;Notes&lt;/h1&gt;&lt;ul&gt;&lt;li&gt;#1 alice: alice's note&lt;/li&gt;&lt;/ul&gt;
+not my note: 403
+no token: 403
+admin as alice: 403
+&lt;h1&gt;Notes&lt;/h1&gt;&lt;ul&gt;&lt;li&gt;#1 alice: alice's note&lt;/li&gt;&lt;li&gt;#2 bob: &amp;lt;script&amp;gt;alert('xss')&amp;lt;/script&amp;gt;&lt;/li&gt;&lt;li&gt;#3 bob: bob's second note&lt;/li&gt;&lt;/ul&gt;
+admin as admin: 200
+admin delete: 200</code></pre></div><div class="callout"><strong>What to observe:</strong> 401 means the caller is unknown; 403 means the caller is known but the action is forbidden. Step 4 shows that a valid CSRF token proves intent, not permission: alice is allowed to submit the form, but she does not own bob's note. Step 5 shows the reverse: alice owns the note, but without the token the request is rejected. Step 7 shows the XSS defense: the seeded <code>&lt;script&gt;</code> payload is rendered as text, not executed.</div></section>
+<section id="what-you-learn"><h2>What You'll Learn</h2><ul>
+<li>Why authentication ("who") and authorization ("what, on which object") are separate decisions, and why 401 and 403 signal different failures.</li>
+<li>Why a session cookie should be an opaque key to server-side state, not a statement of identity the client can edit.</li>
+<li>How RBAC replaces per-user permission lists with roles, and why that scales.</li>
+<li>Why ownership is a per-object check, and how skipping it creates IDOR (insecure direct object references).</li>
+<li>Why CSRF works: browsers attach cookies automatically, so a cross-site request can be authenticated without the user's intent.</li>
+<li>Why a synchronizer token proves intent: the attacker cannot read a per-session secret.</li>
+<li>When double-submit cookies work without server storage, and what they trust instead.</li>
+<li>Why <code>SameSite</code>, <code>HttpOnly</code>, and <code>Secure</code> are layers, not substitutes for a CSRF token.</li>
+<li>Why XSS is a different trust failure that can read the CSRF token and defeat it.</li>
+<li>Why safe methods and correct status codes are part of the security model.</li>
+</ul></section>
+<section id="key-terms"><h2>Key terms</h2><p>Four acronyms carry the whole tutorial. Here is the short version before the requests make them concrete.</p>
+<dl class="terms">
+<dt>CSRF &mdash; Cross-Site Request Forgery</dt>
+<dd>An attack that makes a logged-in user's browser send a state-changing request to a site the user trusts, without the user's intent. The browser attaches the user's cookies automatically, so the request looks authenticated; the attacker never needs to read the response.</dd>
+<dt>RBAC &mdash; Role-Based Access Control</dt>
+<dd>An authorization model where permissions are grouped into roles (for example <code>user</code> and <code>admin</code>) and each user is assigned one or more roles. A request is allowed only if the user's role grants it.</dd>
+<dt>XSS &mdash; Cross-Site Scripting</dt>
+<dd>An injection attack where attacker-controlled text is rendered as executable code (usually JavaScript) in another user's browser, under your site's origin. XSS can read tokens, call authenticated endpoints, and exfiltrate data.</dd>
+<dt>IDOR &mdash; Insecure Direct Object Reference</dt>
+<dd>An authorization bug where changing an identifier in a request (for example <code>/notes/1</code> to <code>/notes/2</code>) gives access to an object the user does not own. Per-object ownership checks prevent it.</dd>
+</dl></section>
+<section id="example"><h2>The Example</h2><p>The program is a tiny notes service. It seeds three notes, keeps sessions and notes in memory, and exposes four endpoints: login, list notes, delete a note, and an admin page. Every line that is not needed to make authorization, CSRF, or XSS observable has been removed.</p>
+<p>The dependency manifest produced by the <code>cargo add</code> commands:</p><div class="codeblock"><div class="codehead"><span class="lang">toml</span><span class="snippet-label">Cargo.toml</span><button class="copy" type="button">Copy</button></div><pre><code class="language-toml">[package]
+name = "authz_csrf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.9"
+axum-extra = { version = "0.12.6", features = ["cookie"] }
+serde = { version = "1.0.229", features = ["derive"] }
+tokio = { version = "1.54.1", features = ["full"] }
+uuid = { version = "1.29.3", features = ["v4"] }
+</code></pre></div><p>The complete <code>src/main.rs</code>:</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs (complete)</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">use std::{collections::HashMap, sync::Arc};
+
+use axum::{
+    extract::{Form, FromRequestParts, Path, State},
+    http::{request::Parts, StatusCode},
+    response::{Html, IntoResponse, Response},
+    routing::{get, post},
+    Router,
+};
+use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
+use serde::Deserialize;
+
+// ---------- state ----------
+
+#[derive(Clone, Copy, PartialEq)]
+enum Role {
+    User,
+    Admin,
+}
+
+struct Session {
+    username: String,
+    role: Role,
+    csrf: String,
+}
+
+struct Note {
+    owner: String,
+    body: String,
+}
+
+#[derive(Clone)]
+struct AppState {
+    sessions: Arc&lt;tokio::sync::RwLock&lt;HashMap&lt;String, Session&gt;&gt;&gt;,
+    notes: Arc&lt;tokio::sync::RwLock&lt;HashMap&lt;u64, Note&gt;&gt;&gt;,
+}
+
+impl AppState {
+    fn new() -&gt; Self {
+        let notes = HashMap::from([
+            (
+                1,
+                Note {
+                    owner: "alice".into(),
+                    body: "alice's note".into(),
+                },
+            ),
+            (
+                2,
+                Note {
+                    owner: "bob".into(),
+                    body: "&lt;script&gt;alert('xss')&lt;/script&gt;".into(),
+                },
+            ),
+            (
+                3,
+                Note {
+                    owner: "bob".into(),
+                    body: "bob's second note".into(),
+                },
+            ),
+        ]);
+        Self {
+            sessions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            notes: Arc::new(tokio::sync::RwLock::new(notes)),
+        }
+    }
+}
+
+// ---------- authentication: who is calling? ----------
+
+struct CurrentUser {
+    username: String,
+    role: Role,
+    csrf: String,
+}
+
+impl FromRequestParts&lt;AppState&gt; for CurrentUser {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &amp;mut Parts,
+        state: &amp;AppState,
+    ) -&gt; Result&lt;Self, Self::Rejection&gt; {
+        let jar = CookieJar::from_request_parts(parts, state).await.unwrap();
+        let sid = jar
+            .get("sid")
+            .map(|c| c.value().to_owned())
+            .ok_or_else(|| (StatusCode::UNAUTHORIZED, "login required").into_response())?;
+
+        // The server looks up the session; the cookie is only an opaque key.
+        let sessions = state.sessions.read().await;
+        let session = sessions
+            .get(&amp;sid)
+            .ok_or_else(|| (StatusCode::UNAUTHORIZED, "login required").into_response())?;
+
+        Ok(CurrentUser {
+            username: session.username.clone(),
+            role: session.role,
+            csrf: session.csrf.clone(),
+        })
+    }
+}
+
+// ---------- authorization #1: roles ----------
+
+struct AdminUser(CurrentUser);
+
+impl FromRequestParts&lt;AppState&gt; for AdminUser {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &amp;mut Parts,
+        state: &amp;AppState,
+    ) -&gt; Result&lt;Self, Self::Rejection&gt; {
+        let user = CurrentUser::from_request_parts(parts, state).await?;
+        if user.role == Role::Admin {
+            Ok(AdminUser(user))
+        } else {
+            Err((StatusCode::FORBIDDEN, "admin only").into_response())
+        }
+    }
+}
+
+// ---------- CSRF: a per-session secret ----------
+
+fn token_ok(expected: &amp;str, submitted: &amp;str) -&gt; bool {
+    let (expected, submitted) = (expected.as_bytes(), submitted.as_bytes());
+    if expected.len() != submitted.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (a, b) in expected.iter().zip(submitted) {
+        diff |= a ^ b;
+    }
+    diff == 0
+}
+
+fn csrf_ok(user: &amp;CurrentUser, submitted: &amp;str) -&gt; Result&lt;(), Response&gt; {
+    // The submitted form field must match the server's copy of the token.
+    if token_ok(&amp;user.csrf, submitted) {
+        Ok(())
+    } else {
+        Err((StatusCode::FORBIDDEN, "invalid or missing CSRF token").into_response())
+    }
+}
+
+#[derive(Deserialize)]
+struct LoginForm {
+    username: String,
+}
+
+#[derive(Deserialize)]
+struct DeleteForm {
+    #[serde(default)]
+    csrf: String,
+}
+
+// ---------- handlers ----------
+
+async fn login(
+    State(state): State&lt;AppState&gt;,
+    jar: CookieJar,
+    Form(form): Form&lt;LoginForm&gt;,
+) -&gt; Result&lt;(CookieJar, String), Response&gt; {
+    let role = match form.username.as_str() {
+        "admin" =&gt; Role::Admin,
+        "alice" | "bob" =&gt; Role::User,
+        _ =&gt; return Err((StatusCode::UNAUTHORIZED, "unknown user").into_response()),
+    };
+
+    let sid = uuid::Uuid::new_v4().simple().to_string();
+    let csrf = uuid::Uuid::new_v4().simple().to_string();
+    state.sessions.write().await.insert(
+        sid.clone(),
+        Session {
+            username: form.username.clone(),
+            role,
+            csrf: csrf.clone(),
+        },
+    );
+
+    // The session cookie is hidden from JavaScript; the CSRF token is readable.
+    let sid_cookie = Cookie::build(("sid", sid))
+        .http_only(true)
+        .same_site(SameSite::Strict)
+        .path("/")
+        .build();
+    let csrf_cookie = Cookie::build(("csrf", csrf))
+        .same_site(SameSite::Strict)
+        .path("/")
+        .build();
+
+    Ok((
+        jar.add(sid_cookie).add(csrf_cookie),
+        format!("logged in as {}\n", form.username),
+    ))
+}
+
+async fn notes(user: CurrentUser, State(state): State&lt;AppState&gt;) -&gt; Html&lt;String&gt; {
+    let notes = state.notes.read().await;
+    let mut visible: Vec&lt;(&amp;u64, &amp;Note)&gt; = notes
+        .iter()
+        .filter(|(_, note)| user.role == Role::Admin || note.owner == user.username)
+        .collect();
+    visible.sort_by_key(|(id, _)| **id);
+
+    let mut out = String::from("&lt;h1&gt;Notes&lt;/h1&gt;&lt;ul&gt;");
+    for (id, note) in visible {
+        out.push_str(&amp;format!(
+            "&lt;li&gt;#{} {}: {}&lt;/li&gt;",
+            id,
+            escape(&amp;note.owner),
+            escape(&amp;note.body)
+        ));
+    }
+    out.push_str("&lt;/ul&gt;\n");
+    Html(out)
+}
+
+async fn delete_note(
+    user: CurrentUser,
+    State(state): State&lt;AppState&gt;,
+    Path(id): Path&lt;u64&gt;,
+    Form(form): Form&lt;DeleteForm&gt;,
+) -&gt; Result&lt;&amp;'static str, Response&gt; {
+    // CSRF proves the request came from the user's page; it does not grant permission.
+    csrf_ok(&amp;user, &amp;form.csrf)?;
+
+    let mut notes = state.notes.write().await;
+    let owner = notes
+        .get(&amp;id)
+        .map(|note| note.owner.clone())
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "no such note").into_response())?;
+
+    // Authorization #2: being logged in is not the same as owning this note.
+    if owner != user.username &amp;&amp; user.role != Role::Admin {
+        return Err((StatusCode::FORBIDDEN, "not your note").into_response());
+    }
+
+    notes.remove(&amp;id);
+    Ok("deleted\n")
+}
+
+async fn admin(AdminUser(user): AdminUser) -&gt; String {
+    format!("admin panel for {}\n", user.username)
+}
+
+// XSS: user text must be escaped before it becomes HTML.
+fn escape(s: &amp;str) -&gt; String {
+    s.replace('&amp;', "&amp;amp;")
+        .replace('&lt;', "&amp;lt;")
+        .replace('&gt;', "&amp;gt;")
+        .replace('"', "&amp;quot;")
+}
+
+#[tokio::main]
+async fn main() {
+    let state = AppState::new();
+    let app = Router::new()
+        .route("/login", post(login))
+        .route("/notes", get(notes))
+        .route("/notes/{id}/delete", post(delete_note))
+        .route("/admin", get(admin))
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        .await
+        .unwrap();
+    println!("listening on http://127.0.0.1:3000");
+    axum::serve(listener, app).await.unwrap();
+}
+</code></pre></div><div class="callout"><strong>Why no HTML pages?</strong> A browser form would submit the same fields and the browser would attach the same cookies. Removing the page code keeps the example small while leaving the security mechanics unchanged. A real page would put the token in a hidden <code>&lt;input&gt;</code>; here <code>curl</code> reads it from the readable <code>csrf</code> cookie and sends it in the form body.</div>
+<div class="callout"><strong>Why note #2 contains a script tag?</strong> It is a deliberately unsafe note body. Listing notes as an admin shows it escaped, which makes the XSS defense observable without adding a "create note" endpoint.</div></section>
+<section id="authn-vs-authz"><h2>Authentication vs authorization</h2><p class="why"><strong>Why it matters:</strong> They answer different questions, and mixing them up creates both security holes and misleading status codes.</p><p>Authentication answers "who is calling?". Authorization answers "may this caller do this, to this object?". A request can pass the first and still fail the second.</p>
+<table>
+<thead><tr><th>Question</th><th>Failure</th><th>Status</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td>Who are you?</td><td>No cookie, unknown session id</td><td><code>401 Unauthorized</code></td><td>Visit <code>/notes</code> without logging in</td></tr>
+<tr><td>May you use this role?</td><td>Authenticated, wrong role</td><td><code>403 Forbidden</code></td><td>alice visits <code>/admin</code></td></tr>
+<tr><td>May you touch this object?</td><td>Authenticated, not the owner</td><td><code>403 Forbidden</code></td><td>alice deletes bob's note</td></tr>
+<tr><td>Is the request well formed?</td><td>Missing field or bad payload</td><td><code>422 Unprocessable Entity</code></td><td>Malformed form body</td></tr>
+<tr><td>Did the request succeed?</td><td>No failure</td><td><code>200 OK</code></td><td>Deleting a note you own</td></tr>
+</tbody>
+</table><figure>
+<svg viewBox="0 0 900 210" role="img" aria-label="A request passes through authentication, then role authorization, then an ownership check before reaching the handler.">
+<defs>
+<marker id="arrow-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted)"/>
+</marker>
+</defs>
+<g font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">
+<rect x="10" y="55" width="150" height="70" rx="10" fill="var(--bg)" stroke="var(--border)"/>
+<text x="85" y="85" text-anchor="middle" fill="var(--fg-strong)" font-weight="700">HTTP request</text>
+<text x="85" y="105" text-anchor="middle" fill="var(--muted)" font-size="11">POST /notes/2/delete</text>
+<rect x="185" y="55" width="160" height="70" rx="10" fill="var(--bg-panel)" stroke="var(--link)"/>
+<text x="265" y="85" text-anchor="middle" fill="var(--fg-strong)" font-weight="700">CurrentUser</text>
+<text x="265" y="105" text-anchor="middle" fill="var(--link)" font-size="11">no session &rarr; 401</text>
+<rect x="370" y="55" width="160" height="70" rx="10" fill="var(--bg-panel)" stroke="var(--ty)"/>
+<text x="450" y="85" text-anchor="middle" fill="var(--fg-strong)" font-weight="700">AdminUser</text>
+<text x="450" y="105" text-anchor="middle" fill="var(--ty)" font-size="11">not admin &rarr; 403</text>
+<rect x="555" y="55" width="170" height="70" rx="10" fill="var(--bg-panel)" stroke="var(--op)"/>
+<text x="640" y="85" text-anchor="middle" fill="var(--fg-strong)" font-weight="700">ownership check</text>
+<text x="640" y="105" text-anchor="middle" fill="var(--op)" font-size="11">not owner &rarr; 403</text>
+<rect x="750" y="55" width="140" height="70" rx="10" fill="var(--bg-panel)" stroke="var(--str)"/>
+<text x="820" y="85" text-anchor="middle" fill="var(--fg-strong)" font-weight="700">handler</text>
+<text x="820" y="105" text-anchor="middle" fill="var(--str)" font-size="11">runs</text>
+<line x1="160" y1="90" x2="181" y2="90" stroke="var(--muted)" stroke-width="2" marker-end="url(#arrow-a)"/>
+<line x1="345" y1="90" x2="366" y2="90" stroke="var(--muted)" stroke-width="2" marker-end="url(#arrow-a)"/>
+<line x1="530" y1="90" x2="551" y2="90" stroke="var(--muted)" stroke-width="2" marker-end="url(#arrow-a)"/>
+<line x1="725" y1="90" x2="746" y2="90" stroke="var(--muted)" stroke-width="2" marker-end="url(#arrow-a)"/>
+<text x="265" y="160" text-anchor="middle" fill="var(--link)" font-size="11">authentication</text>
+<text x="535" y="160" text-anchor="middle" fill="var(--op)" font-size="11">authorization</text>
+<path d="M 185 150 H 725" stroke="var(--border)" stroke-dasharray="4 4"/>
+</g>
+</svg>
+<figcaption>Authentication runs first and answers "who?". Authorization runs next and answers "may this caller do this?". A failure short-circuits the request before the handler runs.</figcaption>
+</figure><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:85–95</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">        let jar = CookieJar::from_request_parts(parts, state).await.unwrap();
+        let sid = jar
+            .get("sid")
+            .map(|c| c.value().to_owned())
+<mark>            .ok_or_else(|| (StatusCode::UNAUTHORIZED, "login required").into_response())?;</mark>
+
+        // The server looks up the session; the cookie is only an opaque key.
+        let sessions = state.sessions.read().await;
+        let session = sessions
+            .get(&amp;sid)
+<mark>            .ok_or_else(|| (StatusCode::UNAUTHORIZED, "login required").into_response())?;</mark></code></pre></div><ul>
+<li><strong>401 is not 403.</strong> 401 means "I do not know who you are"; 403 means "I know exactly who you are, and this is forbidden".</li>
+<li><strong>Authentication is a prerequisite, not a permission.</strong> Proving a request comes from alice says nothing about whether alice may touch a particular note.</li>
+<li><strong>Status codes are part of the API.</strong> Clients and proxies act on them, so they should reflect the real reason a request failed.</li>
+</ul></section>
+<section id="session-identity"><h2>Session identity: a cookie is a key</h2><p class="why"><strong>Why it matters:</strong> If the client can promote itself by editing a cookie, every later authorization check is built on sand.</p><p>The session cookie should carry an opaque random id. The server maps that id to a session record containing the username, role, and CSRF token. The client's only power is to present the key.</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:78–103</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">impl FromRequestParts&lt;AppState&gt; for CurrentUser {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &amp;mut Parts,
+        state: &amp;AppState,
+    ) -&gt; Result&lt;Self, Self::Rejection&gt; {
+<mark>        let jar = CookieJar::from_request_parts(parts, state).await.unwrap();</mark>
+        let sid = jar
+            .get("sid")
+            .map(|c| c.value().to_owned())
+            .ok_or_else(|| (StatusCode::UNAUTHORIZED, "login required").into_response())?;
+
+<mark>        // The server looks up the session; the cookie is only an opaque key.</mark>
+<mark>        let sessions = state.sessions.read().await;</mark>
+        let session = sessions
+            .get(&amp;sid)
+            .ok_or_else(|| (StatusCode::UNAUTHORIZED, "login required").into_response())?;
+
+        Ok(CurrentUser {
+            username: session.username.clone(),
+            role: session.role,
+            csrf: session.csrf.clone(),
+        })
+    }
+}</code></pre></div><ul>
+<li><strong>Server-side truth:</strong> identity and role come from the session store, never from a username or role in the request body.</li>
+<li><strong>Opaque key:</strong> the cookie contains no username, role, or signature the client can reason about or forge.</li>
+<li><strong>Typed gate:</strong> a handler that takes a <code>CurrentUser</code> cannot accidentally run unauthenticated; the type makes the check hard to forget.</li>
+<li><strong>New session per login:</strong> logging in issues a fresh id and token, so an old session cannot be reused or fixed.</li>
+</ul></section>
+<section id="rbac"><h2>RBAC: Role-Based Access Control</h2><p class="why"><strong>Why it matters:</strong> Roles let you describe who may do a kind of action once, instead of repeating permission lists for every user and route.</p><p><strong>RBAC (Role-Based Access Control)</strong> groups permissions into roles such as <code>user</code> and <code>admin</code>, then assigns roles to users. The code asks "does this user's role grant this action?" rather than "is this user alice?".</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:107–123</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">struct AdminUser(CurrentUser);
+
+impl FromRequestParts&lt;AppState&gt; for AdminUser {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &amp;mut Parts,
+        state: &amp;AppState,
+    ) -&gt; Result&lt;Self, Self::Rejection&gt; {
+<mark>        let user = CurrentUser::from_request_parts(parts, state).await?;</mark>
+<mark>        if user.role == Role::Admin {</mark>
+            Ok(AdminUser(user))
+        } else {
+<mark>            Err((StatusCode::FORBIDDEN, "admin only").into_response())</mark>
+        }
+    }
+}</code></pre></div><ul>
+<li><strong>Coarse-grained:</strong> roles answer "may you use the admin panel?"; they do not answer "may you delete note #2?". Ownership handles that.</li>
+<li><strong>403, not 401:</strong> the caller is authenticated; they simply lack the role.</li>
+<li><strong>Hard to bypass accidentally:</strong> the admin handler takes an <code>AdminUser</code>, so a plain authenticated user cannot satisfy its signature.</li>
+<li><strong>Keep roles few:</strong> a small set of roles is easier to reason about than a per-user permission matrix.</li>
+</ul></section>
+<section id="ownership"><h2>Ownership: authorize the object</h2><p class="why"><strong>Why it matters:</strong> Authentication and roles are about the caller; ownership is about the specific object being touched.</p><p>This is where IDOR (insecure direct object reference) lives. An authenticated user changes <code>/notes/1/delete</code> to <code>/notes/2/delete</code> and, if the server only checked "are you logged in?", deletes someone else's note. The check must load the note and compare its stored owner.</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:221–243</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">async fn delete_note(
+    user: CurrentUser,
+    State(state): State&lt;AppState&gt;,
+    Path(id): Path&lt;u64&gt;,
+    Form(form): Form&lt;DeleteForm&gt;,
+) -&gt; Result&lt;&amp;'static str, Response&gt; {
+    // CSRF proves the request came from the user's page; it does not grant permission.
+    csrf_ok(&amp;user, &amp;form.csrf)?;
+
+    let mut notes = state.notes.write().await;
+<mark>    let owner = notes</mark>
+        .get(&amp;id)
+        .map(|note| note.owner.clone())
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "no such note").into_response())?;
+
+    // Authorization #2: being logged in is not the same as owning this note.
+<mark>    if owner != user.username &amp;&amp; user.role != Role::Admin {</mark>
+<mark>        return Err((StatusCode::FORBIDDEN, "not your note").into_response());</mark>
+    }
+
+    notes.remove(&amp;id);
+    Ok("deleted\n")
+}</code></pre></div><p>The same idea applies to reads, not just deletes:</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:200–206</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">async fn notes(user: CurrentUser, State(state): State&lt;AppState&gt;) -&gt; Html&lt;String&gt; {
+    let notes = state.notes.read().await;
+    let mut visible: Vec&lt;(&amp;u64, &amp;Note)&gt; = notes
+        .iter()
+<mark>        .filter(|(_, note)| user.role == Role::Admin || note.owner == user.username)</mark>
+        .collect();
+    visible.sort_by_key(|(id, _)| **id);</code></pre></div><ul>
+<li><strong>Load, check, then mutate:</strong> fetch the object, compare its owner (or an explicit admin override), and only then change it.</li>
+<li><strong>Never trust an owner from the request:</strong> the owner must come from the stored object or the session, never from a client-supplied field.</li>
+<li><strong>Filter reads too:</strong> alice's list must not contain bob's notes; hiding data and denying access are separate checks.</li>
+<li><strong>403 vs 404:</strong> 403 confirms the object exists; 404 hides that fact. Choose deliberately and stay consistent.</li>
+</ul></section>
+<section id="how-csrf-works"><h2>CSRF: Cross-Site Request Forgery</h2><p class="why"><strong>Why it matters:</strong> A request can be fully authenticated and still not be something the user intended; CSRF is the gap between those two facts.</p><p><strong>CSRF (Cross-Site Request Forgery)</strong> makes a logged-in user's browser send a state-changing request to a site the user trusts, without the user's intent. The browser attaches the user's cookies automatically, so the request is genuinely authenticated. The attacker does not need to read the response, only to cause the side effect.</p>
+<p>The browser chooses cookies by destination, not by who started the request. If the victim is logged in and an attacker's page auto-submits a form to <code>/notes/2/delete</code>, the browser sends the victim's <code>sid</code> cookie with it.</p><figure>
+<svg viewBox="0 0 900 360" role="img" aria-label="Sequence diagram: the victim visits evil.com, which returns a hidden auto-submitting form; the browser posts to bank.com with the victim's cookies, and bank.com performs the action.">
+<defs>
+<marker id="arrow-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted)"/>
+</marker>
+<marker id="arrow-b2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M 0 0 L 10 5 L 0 10 z" fill="var(--op)"/>
+</marker>
+</defs>
+<g font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">
+<rect x="40" y="16" width="180" height="50" rx="10" fill="var(--bg)" stroke="var(--border)"/>
+<text x="130" y="46" text-anchor="middle" fill="var(--fg-strong)" font-weight="700">Victim browser</text>
+<rect x="360" y="16" width="170" height="50" rx="10" fill="var(--bg)" stroke="var(--border)"/>
+<text x="445" y="46" text-anchor="middle" fill="var(--fg-strong)" font-weight="700">evil.com</text>
+<rect x="690" y="16" width="170" height="50" rx="10" fill="var(--bg)" stroke="var(--border)"/>
+<text x="775" y="46" text-anchor="middle" fill="var(--fg-strong)" font-weight="700">bank.com</text>
+<line x1="130" y1="66" x2="130" y2="330" stroke="var(--border)" stroke-dasharray="4 5"/>
+<line x1="445" y1="66" x2="445" y2="330" stroke="var(--border)" stroke-dasharray="4 5"/>
+<line x1="775" y1="66" x2="775" y2="330" stroke="var(--border)" stroke-dasharray="4 5"/>
+<line x1="130" y1="100" x2="441" y2="100" stroke="var(--muted)" stroke-width="2" marker-end="url(#arrow-b)"/>
+<text x="285" y="93" text-anchor="middle" fill="var(--fg)" font-size="12">1. victim visits the page</text>
+<line x1="445" y1="145" x2="134" y2="145" stroke="var(--muted)" stroke-width="2" marker-end="url(#arrow-b)"/>
+<text x="290" y="138" text-anchor="middle" fill="var(--fg)" font-size="12">2. page returns a hidden auto-submitting form</text>
+<line x1="130" y1="205" x2="771" y2="205" stroke="var(--op)" stroke-width="2.5" marker-end="url(#arrow-b2)"/>
+<text x="450" y="197" text-anchor="middle" fill="var(--op)" font-size="12">3. browser POSTs to bank.com with the victim's cookies attached</text>
+<line x1="771" y1="260" x2="134" y2="260" stroke="var(--muted)" stroke-width="2" marker-end="url(#arrow-b)"/>
+<text x="450" y="253" text-anchor="middle" fill="var(--fg)" font-size="12">4. bank performs the action; the attacker never reads the response</text>
+<text x="450" y="315" text-anchor="middle" fill="var(--muted)" font-size="11">Without a CSRF check, a valid session cookie is not proof of user intent.</text>
+</g>
+</svg>
+<figcaption>The request is genuinely authenticated as the victim. CORS does not help: it stops the attacker from <em>reading</em> the response, not from causing the request to be sent.</figcaption>
+</figure><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:183–192</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">    // The session cookie is hidden from JavaScript; the CSRF token is readable.
+    let sid_cookie = Cookie::build(("sid", sid))
+<mark>        .http_only(true)</mark>
+        .same_site(SameSite::Strict)
+        .path("/")
+        .build();
+<mark>    let csrf_cookie = Cookie::build(("csrf", csrf))</mark>
+        .same_site(SameSite::Strict)
+        .path("/")
+        .build();</code></pre></div><ul>
+<li><strong>A valid session is not user intent:</strong> the cookie proves the browser has a session, not that the user chose this action.</li>
+<li><strong>Cross-site forms are "simple requests":</strong> a form POST with <code>application/x-www-form-urlencoded</code> does not trigger a CORS preflight. The attacker cannot read the response, but the request is still sent.</li>
+<li><strong>Only state-changing requests need the check:</strong> GET must stay safe and idempotent. If <code>GET /notes/2/delete</code> deleted a note, an <code>&lt;img&gt;</code> tag would be enough to trigger it.</li>
+<li><strong>The cookie is the delivery vehicle:</strong> <code>sid</code> is what gets attached automatically; the readable <code>csrf</code> cookie is only a way to hand the token to the page or client.</li>
+</ul></section>
+<section id="synchronizer-token"><h2>Synchronizer token: proof of intent</h2><p class="why"><strong>Why it matters:</strong> If the page and the server share a per-session secret that the attacker cannot read, echoing that secret becomes evidence that the user's page sent the request.</p><p>A synchronizer token is generated at login, stored in the session, and echoed by every state-changing request. The attacker can send any field they like, but they cannot guess or read the secret. The server compares the submitted value with its own copy.</p><figure>
+<svg viewBox="0 0 900 300" role="img" aria-label="Token exchange: the server stores the CSRF token in the session and renders it into the page; the browser submits it with the form; the server compares it to the stored value.">
+<defs>
+<marker id="arrow-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted)"/>
+</marker>
+</defs>
+<g font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">
+<rect x="30" y="20" width="180" height="46" rx="10" fill="var(--bg)" stroke="var(--border)"/>
+<text x="120" y="48" text-anchor="middle" fill="var(--fg-strong)" font-weight="700">Browser</text>
+<rect x="680" y="20" width="190" height="46" rx="10" fill="var(--bg)" stroke="var(--border)"/>
+<text x="775" y="48" text-anchor="middle" fill="var(--fg-strong)" font-weight="700">Server</text>
+<line x1="120" y1="66" x2="120" y2="280" stroke="var(--border)" stroke-dasharray="4 5"/>
+<line x1="775" y1="66" x2="775" y2="280" stroke="var(--border)" stroke-dasharray="4 5"/>
+<rect x="640" y="86" width="270" height="52" rx="8" fill="var(--bg-panel)" stroke="var(--border)"/>
+<text x="775" y="107" text-anchor="middle" fill="var(--fg-strong)" font-size="12">Session { csrf_token: "a1b2..." }</text>
+<text x="775" y="125" text-anchor="middle" fill="var(--muted)" font-size="11">stored next to the user</text>
+<line x1="771" y1="165" x2="124" y2="165" stroke="var(--muted)" stroke-width="2" marker-end="url(#arrow-c)"/>
+<text x="447" y="158" text-anchor="middle" fill="var(--fg)" font-size="12">render &lt;input type="hidden" name="csrf" value="a1b2..."&gt;</text>
+<line x1="120" y1="215" x2="771" y2="215" stroke="var(--muted)" stroke-width="2" marker-end="url(#arrow-c)"/>
+<text x="447" y="208" text-anchor="middle" fill="var(--fg)" font-size="12">POST form: csrf=a1b2... plus the session cookie</text>
+<line x1="771" y1="262" x2="124" y2="262" stroke="var(--str)" stroke-width="2" marker-end="url(#arrow-c)"/>
+<text x="447" y="255" text-anchor="middle" fill="var(--str)" font-size="12">equal? run the handler : 403</text>
+</g>
+</svg>
+<figcaption>The token is compared against the server-side session, not against another cookie. That is what makes it a synchronizer token.</figcaption>
+</figure><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:172–181</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust"><mark>    let sid = uuid::Uuid::new_v4().simple().to_string();</mark>
+<mark>    let csrf = uuid::Uuid::new_v4().simple().to_string();</mark>
+    state.sessions.write().await.insert(
+        sid.clone(),
+        Session {
+            username: form.username.clone(),
+            role,
+            csrf: csrf.clone(),
+<mark>        },</mark>
+    );</code></pre></div><p>The check itself is small:</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:139–146</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">fn csrf_ok(user: &amp;CurrentUser, submitted: &amp;str) -&gt; Result&lt;(), Response&gt; {
+    // The submitted form field must match the server's copy of the token.
+<mark>    if token_ok(&amp;user.csrf, submitted) {</mark>
+        Ok(())
+    } else {
+        Err((StatusCode::FORBIDDEN, "invalid or missing CSRF token").into_response())
+    }
+}</code></pre></div><p>And it is called before the handler mutates anything:</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:221–228</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">async fn delete_note(
+    user: CurrentUser,
+    State(state): State&lt;AppState&gt;,
+    Path(id): Path&lt;u64&gt;,
+    Form(form): Form&lt;DeleteForm&gt;,
+) -&gt; Result&lt;&amp;'static str, Response&gt; {
+    // CSRF proves the request came from the user's page; it does not grant permission.
+<mark>    csrf_ok(&amp;user, &amp;form.csrf)?;</mark></code></pre></div><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:127–137</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">fn token_ok(expected: &amp;str, submitted: &amp;str) -&gt; bool {
+    let (expected, submitted) = (expected.as_bytes(), submitted.as_bytes());
+    if expected.len() != submitted.len() {
+        return false;
+    }
+<mark>    let mut diff = 0u8;</mark>
+    for (a, b) in expected.iter().zip(submitted) {
+        diff |= a ^ b;
+<mark>    }</mark>
+    diff == 0
+}</code></pre></div><ul>
+<li><strong>Per-session and random:</strong> each login gets a fresh token. A global token shared by all users is effectively public.</li>
+<li><strong>Compared to the server's copy:</strong> the submitted field is checked against <code>Session.csrf</code>, not against the <code>csrf</code> cookie. That is what makes this a synchronizer token rather than double-submit.</li>
+<li><strong>Proof of intent, not permission:</strong> a correct token says the page sent the request; it does not say the user may delete this particular note. Both checks are required.</li>
+<li><strong>Constant-time comparison:</strong> avoids leaking how many leading bytes matched. The fix is cheap, so use it.</li>
+</ul>
+<div class="callout"><strong>A missing token should be a deliberate rejection.</strong> If the body schema treats the token as required, a request with no token can fail as malformed (422) before your authorization logic runs. Parse it leniently, then reject it explicitly in the check (403), so the status code reflects the security decision.</div></section>
+<section id="double-submit"><h2>Double-submit cookie: stateless defense</h2><p class="why"><strong>Why it matters:</strong> If you cannot store a token per session, you can still compare something the browser has with something the page sends.</p><p>The double-submit pattern puts a random value in a readable cookie and requires the page to echo it in a form field or header. The server compares the two and needs no session store. The example above does <em>not</em> use this pattern; it compares against the session instead.</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">variant (not in the example)</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">async fn double_submit_ok(jar: &amp;CookieJar, submitted: &amp;str) -&gt; bool {
+    match jar.get("csrf") {
+        Some(cookie) =&gt; token_ok(cookie.value(), submitted),
+        None =&gt; false,
+    }
+}</code></pre></div><table>
+<thead><tr><th></th><th>Synchronizer token (used above)</th><th>Double-submit cookie</th></tr></thead>
+<tbody>
+<tr><td>Where the truth lives</td><td>Server-side session</td><td>The cookie itself</td></tr>
+<tr><td>Server storage</td><td>One token per session</td><td>None</td></tr>
+<tr><td>Stateless instances</td><td>Need shared session storage</td><td>Work without it</td></tr>
+<tr><td>Main risk</td><td>Session store must be trustworthy</td><td>An attacker who can set cookies on a sibling subdomain can forge a matching pair</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Works statelessly:</strong> no server-side token store, which helps when requests can land on any instance.</li>
+<li><strong>Trusts the cookie channel:</strong> subdomain cookie injection and sloppy cookie scoping are the weak points.</li>
+<li><strong>Harden it:</strong> use a <code>__Host-</code> cookie prefix, HTTPS, an explicit path, and rotation. Prefer the synchronizer when you already have sessions.</li>
+</ul></section>
+<section id="samesite"><h2>SameSite, HttpOnly, Secure</h2><p class="why"><strong>Why it matters:</strong> Cookie attributes reduce how a cookie can leak or travel, but none of them proves who initiated a request.</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:183–192</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">    // The session cookie is hidden from JavaScript; the CSRF token is readable.
+    let sid_cookie = Cookie::build(("sid", sid))
+<mark>        .http_only(true)</mark>
+<mark>        .same_site(SameSite::Strict)</mark>
+        .path("/")
+        .build();
+    let csrf_cookie = Cookie::build(("csrf", csrf))
+<mark>        .same_site(SameSite::Strict)</mark>
+        .path("/")
+        .build();</code></pre></div><table>
+<thead><tr><th>Attribute</th><th>What it does</th><th>CSRF impact</th></tr></thead>
+<tbody>
+<tr><td><code>HttpOnly</code></td><td>Hides the cookie from JavaScript</td><td>Limits XSS cookie theft, but the browser still sends the cookie cross-site.</td></tr>
+<tr><td><code>Secure</code></td><td>Sends the cookie only over HTTPS</td><td>Protects transport; does not address intent.</td></tr>
+<tr><td><code>SameSite=Strict</code></td><td>Does not send the cookie on cross-site requests</td><td>Strong mitigation, but can break top-level navigation and is not universal across old clients.</td></tr>
+<tr><td><code>SameSite=Lax</code></td><td>Sends the cookie on top-level GET navigation from other sites</td><td>Good default; does not protect a state-changing GET.</td></tr>
+<tr><td><code>SameSite=None</code></td><td>Sends the cookie cross-site; requires <code>Secure</code></td><td>No CSRF protection; use only when third-party embedding requires it.</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>HttpOnly is not CSRF protection:</strong> the browser still attaches the cookie; JavaScript simply cannot read it.</li>
+<li><strong>Same-site is not same-origin:</strong> "site" is usually the registrable domain, while "origin" is scheme + host + port. Two subdomains are same-site but different origins.</li>
+<li><strong>Defense in depth:</strong> use <code>SameSite</code>, a CSRF token, CORS rules, and output encoding together. Each covers a gap the others miss.</li>
+</ul></section>
+<section id="xss"><h2>XSS: Cross-Site Scripting</h2><p class="why"><strong>Why it matters:</strong> CSRF assumes the attacker cannot read your page; XSS breaks that assumption by letting the attacker run code on your origin.</p><p><strong>XSS (Cross-Site Scripting)</strong> is an injection attack where untrusted text becomes executable code (usually JavaScript) in another user's browser, under your site's origin. It comes in reflected, stored, and DOM-based forms. XSS can read the CSRF token from the DOM or the readable cookie, call authenticated endpoints directly, and exfiltrate data.</p>
+<p>CSRF and XSS are complementary threats: CSRF abuses the browser's automatic attachment of credentials, while XSS abuses the browser's execution of code your site served. A CSRF token is not an XSS defense.</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:249–255</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">// XSS: user text must be escaped before it becomes HTML.
+fn escape(s: &amp;str) -&gt; String {
+<mark>    s.replace('&amp;', "&amp;amp;")</mark>
+<mark>        .replace('&lt;', "&amp;lt;")</mark>
+<mark>        .replace('&gt;', "&amp;gt;")</mark>
+        .replace('"', "&amp;quot;")
+}</code></pre></div><p>The listing endpoint applies it before putting the body into HTML:</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">src/main.rs:208–218</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">    let mut out = String::from("&lt;h1&gt;Notes&lt;/h1&gt;&lt;ul&gt;");
+    for (id, note) in visible {
+        out.push_str(&amp;format!(
+            "&lt;li&gt;#{} {}: {}&lt;/li&gt;",
+            id,
+            escape(&amp;note.owner),
+<mark>            escape(&amp;note.body)</mark>
+        ));
+    }
+    out.push_str("&lt;/ul&gt;\n");
+    Html(out)</code></pre></div><ul>
+<li><strong>Escape for the context:</strong> text nodes, attributes, URLs, and JavaScript strings need different encoding. A template engine (askama, minijinja, maud) does this automatically for larger pages.</li>
+<li><strong>The seeded note proves it:</strong> bob's <code>&lt;script&gt;</code> body appears as text in the admin listing, not as executable code.</li>
+<li><strong>HttpOnly limits theft, not action:</strong> an XSS payload cannot read the session cookie, but it can still call your endpoints with the browser's cookies attached.</li>
+<li><strong>Add a Content-Security-Policy</strong> as another layer; it reduces the impact of an injection bug but does not replace correct output encoding.</li>
+</ul></section>
+<section id="api-csrf"><h2>APIs and header tokens</h2><p class="why"><strong>Why it matters:</strong> The defense is the same; only the delivery changes when the client is a script instead of a form.</p><p>SPAs and mobile clients often send JSON rather than forms. They can send the same token in an <code>X-CSRF-Token</code> header. A custom header cannot be set by a cross-site HTML form and it triggers a CORS preflight, so the attacker's origin must be explicitly allowed.</p><div class="codeblock"><div class="codehead"><span class="lang">rust</span><span class="snippet-label">variant (not in the example)</span><button class="copy" type="button">Copy</button></div><pre><code class="language-rust">use axum::http::HeaderMap;
+
+fn token_from_header(headers: &amp;HeaderMap, expected: &amp;str) -&gt; bool {
+    headers
+        .get("x-csrf-token")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| token_ok(expected, value))
+        .unwrap_or(false)
+}</code></pre></div><ul>
+<li><strong>Bearer tokens are different:</strong> an <code>Authorization</code> header is not attached automatically, so bearer-token APIs are not CSRF-prone in the same way. Token theft via XSS is the bigger risk.</li>
+<li><strong>CORS is not CSRF protection:</strong> an overly permissive <code>Access-Control-Allow-Origin</code> with credentials can undo the benefit. Allowlist origins; never combine <code>*</code> with credentials.</li>
+<li><strong>Keep tokens out of URLs:</strong> query strings leak into logs, browser history, and <code>Referer</code> headers.</li>
+</ul></section>
+<section id="pitfalls"><h2>Common pitfalls</h2><ul>
+<li><strong>"A logged-in request is a user-intended request."</strong> CSRF exists precisely because the first does not imply the second.</li>
+<li><strong>"Authentication implies authorization."</strong> Knowing the caller says nothing about what they may do or which objects they may touch.</li>
+<li><strong>"If the UI hides it, the server is protected."</strong> Hiding a button is not a security control; the endpoint must enforce the rule.</li>
+<li><strong>"A valid CSRF token grants permission."</strong> The token proves intent only. Alice can submit a valid token and still be forbidden from deleting bob's note.</li>
+<li><strong>"A CSRF token protects against XSS."</strong> If the attacker can run code on your origin, they can read the token. XSS defeats CSRF.</li>
+<li><strong>"SameSite solves CSRF completely."</strong> It helps a lot, but same-site subdomains, older clients, and non-browser clients remain gaps.</li>
+<li><strong>"HttpOnly prevents CSRF."</strong> It stops JavaScript from reading the cookie; the browser still sends it cross-site.</li>
+<li><strong>"CORS prevents CSRF."</strong> CORS stops the attacker from reading the response, not from causing a simple request to be sent.</li>
+<li><strong>"GET is fine for deletes."</strong> Then an image tag or a link preview can trigger the delete; keep state changes on unsafe methods.</li>
+<li><strong>"403 and 404 are interchangeable."</strong> One reveals that the object exists; the other hides it. Choose deliberately.</li>
+<li><strong>"Roles are enough."</strong> Role checks are coarse; without per-object ownership checks you still have IDOR.</li>
+<li><strong>"One global CSRF token is fine."</strong> A token shared by all users is effectively public. Use one per session.</li>
+<li><strong>"Login is not state-changing, so it needs no protection."</strong> Login CSRF can log a victim into the attacker's account.</li>
+</ul></section>
+<section id="takeaways"><h2>Key Takeaways</h2><p>Authentication, roles, and ownership answer three different questions, and a request can pass the first and still fail the others. CSRF is not an authentication failure: it is the browser attaching a valid credential to a request the user did not intend, so a per-session token the attacker cannot read is what proves intent. XSS is the exception that breaks that proof, which is why output encoding and CSRF defense must be deployed together.</p></section>
+</main>
+</div>
+<script>
+(function () {
+  var root = document.documentElement;
+  var toggle = document.getElementById("theme-toggle");
+  function current() {
+    return root.getAttribute("data-theme") ||
+      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  }
+  toggle.addEventListener("click", function () {
+    var next = current() === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("theme", next); } catch (e) {}
+  });
+  document.querySelectorAll(".codeblock").forEach(function (block) {
+    var btn = block.querySelector(".copy");
+    var code = block.querySelector("code");
+    if (!btn || !code) return;
+    btn.addEventListener("click", function () {
+      var text = code.textContent;
+      var done = function () {
+        btn.textContent = "Copied";
+        setTimeout(function () { btn.textContent = "Copy"; }, 1200);
+      };
+      var fallback = function () {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.top = "-1000px";
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); done(); }
+        catch (e) { btn.textContent = "Copy failed"; }
+        document.body.removeChild(ta);
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else {
+        fallback();
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
